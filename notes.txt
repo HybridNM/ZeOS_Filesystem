@@ -1,0 +1,11 @@
+
+
+
+Proceso para leer un archivo de disco:
+1. Conseguir el inodo raiz a partir de su numero de inodo (normalmente 2)
+2. Recorrer el arbol de directorios recursivamente hasta encontrar el archivo que coincide con el nombre
+3. 
+
+
+Posibles ideas:
+- Si me sobra tiempo (no creo) puedo hacer un desfragmentador
