@@ -11,3 +11,8 @@ Proceso para leer un archivo de disco:
 
 Ideas que seguramente nunca vean la luz:
 - Si me sobra tiempo (no creo) puedo hacer un desfragmentador
+
+
+Referencias:
+- https://pages.cs.wisc.edu/~remzi/OSTEP/file-implementation.pdf
+- https://wiki.osdev.org/Main_Page
