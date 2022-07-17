@@ -2,10 +2,12 @@
 
 
 Proceso para leer un archivo de disco:
+0. open(file)
 1. Conseguir el inodo raiz a partir de su numero de inodo (normalmente 2)
 2. Recorrer el arbol de directorios recursivamente hasta encontrar el archivo que coincide con el nombre
-3. 
+3. Una vez el inodo esta en memoria se puede conseguir la posicion de disco
+4. Done, ahora se puede hacer read() y close(). Se tiene que actualizar el puntero de lectura
 
 
-Posibles ideas:
+Ideas que seguramente nunca vean la luz:
 - Si me sobra tiempo (no creo) puedo hacer un desfragmentador
