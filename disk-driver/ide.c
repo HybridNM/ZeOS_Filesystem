@@ -45,11 +45,14 @@ char* IDE_VERSION="v1.0";
 #define STATUSALT         DEVCTL
 
 // Bits in STATUS register
-#define IDE_BSY       0x80	//Busy
-#define IDE_DRDY      0x40	//Device ready
-#define IDE_DF        0x20	//Data fault
-#define IDE_DRQ       0x08	//Data ReQuest
-#define IDE_ERR       0x01	//Error
+#define IDE_BSY       0x80	//Busy								0b 1000 0000
+#define IDE_DRDY      0x40	//Device ready						0b 0100 0000
+#define IDE_DF        0x20	//Data fault						0b 0010 0000
+//dfine IDE_SRV		  0x10	//Overlapped Mode Service Request	0b 0001 0000
+#define IDE_DRQ       0x08	//Data ReQuest						0b 0000 1000
+//dfine IDE_CORR	  0x04	//Corrected data (always 0)			0b 0000 0100
+//dfine IDE_IDX		  0x02	//Index (always 0)					0b 0000 0010
+#define IDE_ERR       0x01	//Error								0b 0000 0001
 
 // Comands for COMMAND register
 #define IDE_CMD_READ  0x20
@@ -80,7 +83,7 @@ void decodeStatusRegister(Byte b);
 // Otherwise, returns -1 if disk returns a fault or an error
 static int idewait(int checkerr)
 {
-  int r;
+	int r;
 
 	// Alternate Status Register: 0x3F6 (R)
 	// --------------------------
@@ -107,15 +110,25 @@ static int idewait(int checkerr)
 	// Obsolete
 	// ERR (ERRor)             01h
 
-  while((((r = inb(STATUSALT)) & (IDE_BSY|IDE_DRDY)) != IDE_DRDY) && (r!=0))
-	decodeStatusRegister(r);
-    ;
-	X("\n");
-	decodeStatusRegister(r);
 
-  if(checkerr && ( (r == 0) || ((r & (IDE_DF|IDE_ERR)) != 0) ))
-    return -1;
-  return 0;
+	// Mask of STATUSALT with 1100_0000 (bits BSY and DRDY), compares it to 0100_0000
+	// 		if r=0100_0000 (BSY=0 and DRDY=1) breaks
+	//		if r=0000_0000 also breaks
+
+  	while((((r = inb(STATUSALT)) & (IDE_BSY|IDE_DRDY)) != IDE_DRDY) && (r!=0)) 
+		decodeStatusRegister(r);
+		;
+		X("\n");
+		decodeStatusRegister(r);
+
+
+	// Mask of STATUSALT with 0010_0001 (bits DF and ERR)
+	//		if different from 0, an error has ocurred, return -1
+	//		if r==0000_0000 an error has ocurred (device not busy but data still not ready)
+
+	if(checkerr && ( (r == 0) || ((r & (IDE_DF|IDE_ERR)) != 0) ))
+		return -1;
+	return 0;
 }
 
 void ide_soft_reset()
@@ -168,49 +181,74 @@ int ideinit(void)
   //  | | | | | | | |
   //  7 6 5 4 3 2 1 0
   //
-  //                        Mask
-  //Obsolete	(these are set to 1)
-  //#   (Command dependent)
-  //DEV (DEVice)            10h
+  //                        			Mask
+  //	Obsolete (these are set to 1)
+  //	# (Command dependent)
+  //	DEV (DEVice)            		10h
   //    0 selects Device 0; 1 selects Device 1
 
-  // Check if disk 1 is present (select device and check for any answer)
-  outb(DEV, 0xe0 | (1<<4));
-  for(i=0; i<1000; i++){
-    if(inb(STATUS) != 0){
-      havedisk1 = 1;
-      break;
-    }
-  }
 
-  // Switch back to disk 0.
-  outb(DEV, 0xe0 | (0<<4));
-  for(i=0; i<1000; i++){
-    if(inb(STATUS) != 0){
-      havedisk0 = 1;
-      break;
-    }
-  }
-  printk("\n** IDE Driver ");
-  printk(IDE_VERSION);
-  printk(" Loaded\n");
-  return (havedisk0 || havedisk1)? 0: -1;
+	// Check if disk 1 is present (select device and check for any answer)
+
+	// Send 111X_0000 to the device register, being X=1 to select drive 1
+	// Then read the status register for a while and wait for an answer from the device.
+	// 	if the status register is written by the device the variable havedisk1 is set. 
+
+	outb(DEV, 0xe0 | (1<<4));
+	for(i=0; i<1000; i++)
+	{
+		if(inb(STATUS) != 0)
+		{
+			havedisk1 = 1;
+			break;
+		}
+	}
+
+	// Same as before but with X=0, to select drive 0, and the variable havedisk0 is set instead.
+	// This will switch back to device 0 even if device 1 was detected.
+
+	// Switch back to disk 0.
+	outb(DEV, 0xe0 | (0<<4));
+	for(i=0; i<1000; i++)
+	{
+		if(inb(STATUS) != 0)
+		{
+			havedisk0 = 1;
+			break;
+		}
+	}
+
+	printk("\n** IDE Driver ");
+	printk(IDE_VERSION);
+	printk(" Loaded\n");
+	
+	return (havedisk0 || havedisk1)? 0: -1;
 }
 
 /* Set number of 'sectors' to access starting at block number 'block' from device 'device' */
 int idesetblock(unsigned char sectors, unsigned block, unsigned char device)
 {
+	// Parameter check, block should never be above 28 bits large, since we're using 28 bit LBA + device can only be 0 or 1
 	if (block >= 1<<28) return -1;
 	if (device > 1) return -1;
+
+	// Write block and sector information to the corresponding registers
 	outb(SECCOUNT, sectors);
-	outb(LBAL, (block         & 0xFF));
-	outb(LBAM, ((block >> 8)  & 0xFF));
-	outb(LBAH, ((block >> 16) & 0xFF));
-	Byte bits = 0x0F; 	//All bits set to 1 (we want LBA=1 (bit 6), bit 7 and bit 5 set to 1 for backward compatibility)
-	bits <<=1;
-	bits |= device;		//Set the device bit (its value is 0 or 1)
-	bits <<=4;			//Last bits reserved for block
-	outb(DEV, (((block >> 24) & 0x0F) | bits)); // if device==0 -> 0xE0 == 1110 0000
+	outb(LBAL, (block         & 0xFF));	// block[7:0]
+	outb(LBAM, ((block >> 8)  & 0xFF));	// block[15:8]
+	outb(LBAH, ((block >> 16) & 0xFF));	// block[23:16]
+	// Last 4 bits of the 28 are written later, in the DEV register
+
+	// Prepare the higher part of the DEV register to be written
+	Byte bits = 0x0F; 	// bits=0000_1111	All bits set to 1 (we want LBA=1 (bit 6), bit 7 and bit 5 set to 1 for backward compatibility)
+	bits <<=1;			// bits=0001_1110
+	bits |= device;		// bits=0001_111X	Set the device bit (its value is 0 or 1)
+	bits <<=4;			// bits=111X_0000	Last bits reserved for block
+	
+	// The higher half of the register will be written as 111X (X being 0 or 1 depending on the device)
+	// The lower half will be formed by the 4 highest bits of the 'block' variable
+	// 	that value is masked with 0x0F
+	outb(DEV, (((block >> 24) & 0x0F) | bits)); // 111X block[27:24]
 	return 0;
 }
 
@@ -241,7 +279,7 @@ int idesetblock(unsigned char sectors, unsigned block, unsigned char device)
 */
 int idewrite( char * b, unsigned bloc )
 {
-	if (b ==  NULL) return -1;
+	if (b == NULL) return -1;
 
 	// Wait bus idle (aka Device READY)
 	idewait(0);
@@ -250,16 +288,24 @@ int idewrite( char * b, unsigned bloc )
 	// Prepare parameters 
 	idesetblock(1, bloc, 0);
 
-	outb(DEVCTL, 0x2);		// Disable interrupts, aka synchronous read nIEN=1 (0000 0010b)
+	// Disable interrupts, aka synchronous read nIEN=1 (0000 0010b)
+	outb(DEVCTL, 0x2);
+
 	// Insert command 
 	outb(CMD, IDE_CMD_WRITE);
 	X("\nWrite command sent...\n");
 
-	// Notes: When you send a command byte and the RDY bit of the Status Registers is clear, you may have to wait (technically up to 30 seconds) for the drive to spin up, before DRQ sets. You may also need to ignore ERR and DF the first four times that you read the Status, if you are polling.
+	// Notes: When you send a command byte and the RDY bit of the Status Registers is clear, you may have to wait (technically up to 30 seconds) 
+	//		  for the drive to spin up, before DRQ sets. You may also need to ignore ERR and DF the first four times that you read the Status, if you are polling.
 	//Wait DATA REQUEST
 	int r;
 	unsigned times=0;
-  	while(((r = inb(STATUSALT)) & (IDE_BSY|IDE_DRQ)) != IDE_DRQ) {
+
+	// Mask of STATUSALT with 1000_1000 (bits BSY and DRQ), compares it to 0000_1000
+	//	Similarly to other cases, checks for BSY=0 and DRQ=1
+  	while(((r = inb(STATUSALT)) & (IDE_BSY|IDE_DRQ)) != IDE_DRQ) 
+	{
+		// If the check has been done more than 4 times, mask STATUSALT with the Error bit, if 1 return error.
 		decodeStatusRegister(r);
 		if ((times > 4) && ((r&IDE_ERR) == IDE_ERR)) return -1;
 		times++;
@@ -273,6 +319,7 @@ int idewrite( char * b, unsigned bloc )
 
 	X("\nData Written.");
 	//Wait for transfer finalization
+	
 #if 0
   	while(((r = inb(STATUSALT)) & (IDE_BSY|IDE_DRQ)) != 0)
 		{X(".");}
@@ -289,6 +336,7 @@ int idewrite( char * b, unsigned bloc )
 }
 
 /* Read 'bloc' block (BLOCK_SIZE bytes) into buffer 'b' */
+// Behavior is exactly the same as the write function
 int ideread( char * b, unsigned bloc )
 {
 	if (b ==  NULL) return -1;
@@ -301,7 +349,8 @@ int ideread( char * b, unsigned bloc )
 	// Prepare parameters 
 	idesetblock(1, bloc, 0);
 
-	outb(DEVCTL, 0x2);		// Disable interrupts, aka synchronous read nIEN=1 (0000 0010b)
+	// Disable interrupts, aka synchronous read nIEN=1 (0000 0010b)
+	outb(DEVCTL, 0x2);
 
 	// Insert command 
 	outb(CMD, IDE_CMD_READ);
@@ -313,7 +362,8 @@ int ideread( char * b, unsigned bloc )
 	//Wait DATA REQUEST
 	int r;
 	unsigned times=0;
-  	while(((r = inb(STATUSALT)) & (IDE_BSY|IDE_DRQ)) != IDE_DRQ) {
+  	while(((r = inb(STATUSALT)) & (IDE_BSY|IDE_DRQ)) != IDE_DRQ) 
+	{
 		decodeStatusRegister(r);
 		if ((times >4) && ((r&IDE_ERR) == IDE_ERR)) return -1;
 		times++;
@@ -327,6 +377,7 @@ int ideread( char * b, unsigned bloc )
 
 	X("\nData Read.");
 	//Wait for transfer finalization
+	
 #if 0
   	while(((r = inb(STATUSALT)) & (IDE_BSY|IDE_DRQ)) != 0)
 		{X(".");}

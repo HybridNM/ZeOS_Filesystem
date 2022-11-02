@@ -6,13 +6,13 @@
 
 # package dev86 is required
 AS86 = as86 -0 -a
-LD86 = ld86 -0
+LD86 = ld86 -0 
 
 HOSTCFLAGS = -Wall -Wstrict-prototypes -g
 HOSTCC = gcc
 CC = gcc
 AS = as --32
-LD = ld
+LD = ld -shared -fstack-protector
 OBJCOPY = objcopy -O binary -R .note -R .comment -S
 
 INCLUDEDIR = include
