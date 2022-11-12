@@ -4,7 +4,7 @@ megs: 16
 
 
 ata0: enabled=1, ioaddr1=0x1f0, ioaddr2=0x3f0, irq=14
-ata0-master: type=disk, path="../../fs.img", mode=flat
+ata0-master: type=disk, path="fs.img", mode=flat
 
 floppya: 1_44=./zeos.bin, status=inserted
 boot: floppy
@@ -18,9 +18,6 @@ debugger_log: -
 
 port_e9_hack: enabled=1
 debug_symbols: file=zeos.sym
-
-#BXSHARE=/usr/share/bochs
-vgaromimage: file=$BXSHARE/VGABIOS-lgpl-latest
 
 # Uncomment next line to enable GUI debugger
 #display_library: x, options="gui_debug"

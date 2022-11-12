@@ -6,18 +6,19 @@
 
 # package dev86 is required
 AS86 = as86 -0 -a
-LD86 = ld86 -0 
+LD86 = ld86 -0
 
 HOSTCFLAGS = -Wall -Wstrict-prototypes -g
 HOSTCC = gcc
 CC = gcc
 AS = as --32
-LD = ld -shared -fstack-protector
+LD = ld
 OBJCOPY = objcopy -O binary -R .note -R .comment -S
 
 INCLUDEDIR = include
 
-CFLAGS =  -m32 -O2  -g -fno-omit-frame-pointer -ffreestanding -Wall -I$(INCLUDEDIR) -fno-PIC
+# -fno-stack-protector es para evitar stack_chk_fail, -mno-sse para evitar el uso de instrucciones simd, que no las reconoce (registro xmm0)
+CFLAGS =  -m32 -O2  -g -fno-omit-frame-pointer -ffreestanding -fno-stack-protector -mno-sse -Wall -I$(INCLUDEDIR) -fno-PIC
 ASMFLAGS = -I$(INCLUDEDIR)
 LDFLAGS = -g -melf_i386
 
