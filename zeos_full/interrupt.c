@@ -94,7 +94,7 @@ void setIdt()
   setInterruptHandler(33, keyboard_handler, 0);
   setInterruptHandler(32, clock_handler, 0);
   setInterruptHandler(14, mifault_handler, 0);
-  //setInterruptHandler(46, ide_handler, 0);
+  setInterruptHandler(46, ide_handler, 0);
   setInterruptHandler(0x80, system_call_handler, 3);
 
   set_idt_reg(&idtR);
