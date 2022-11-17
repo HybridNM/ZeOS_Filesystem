@@ -20,11 +20,11 @@ int zeos_ticks = 0;
 char char_map[] =
 {
   '\0','\0','1','2','3','4','5','6',
-  '7','8','9','0','\'','¡','\0','\0',
+  '7','8','9','0','\'','ï¿½','\0','\0',
   'q','w','e','r','t','y','u','i',
   'o','p','`','+','\0','\0','a','s',
-  'd','f','g','h','j','k','l','ñ',
-  '\0','º','\0','ç','z','x','c','v',
+  'd','f','g','h','j','k','l','ï¿½',
+  '\0','ï¿½','\0','ï¿½','z','x','c','v',
   'b','n','m',',','.','-','\0','*',
   '\0','\0','\0','\0','\0','\0','\0','\0',
   '\0','\0','\0','\0','\0','\0','\0','7',
@@ -100,32 +100,30 @@ void setIdt()
   set_idt_reg(&idtR);
 }
 
-void keyboard_routine() {
+void keyboard_routine()
+{
+    char c, value;
+    c = inb(0x60);
 
-   char c, value;
+    if (!(c & 0x80)) 
+    {
+        value = char_map[(unsigned short)c];
 
-   c = inb(0x60);
-
-   if (!(c & 0x80)) {
-	value = char_map[(unsigned short)c];
-	if (value != '\0')
-		printc_xy(0,0,value);
-	else 
-		printc_xy(0,0,'C');
-   }
-
+        if (value != '\0') printc_xy(0,0,value);
+        else printc_xy(0,0,'C');
+    }
 }
 
-void clock_routine() {
-zeos_ticks++;
-zeos_show_clock();	
-scheduling();
-
+void clock_routine() 
+{
+    zeos_ticks++;
+    zeos_show_clock();	
+    scheduling();
 }
 
 
-void mifault_routine( unsigned error_code, unsigned eip, unsigned cs, unsigned ebp, unsigned esp, unsigned ss) {
-
+void mifault_routine( unsigned error_code, unsigned eip, unsigned cs, unsigned ebp, unsigned esp, unsigned ss) 
+{
 	printk("Fallo de pagina\n eip = ");
 	char b[20];
 	printk( itoahex(eip, b) );
