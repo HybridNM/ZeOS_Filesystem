@@ -65,7 +65,11 @@ int havedisk1 = 0;
 unsigned proso_blocks = 0;	// #Total de blocs al disk
 
 /* ide_debug - If enabled shows debug information for register access */
-volatile unsigned ide_debug = 0;
+volatile unsigned ide_debug = 1;
+
+
+// Temporary tests
+char IRQ_RECEIVED = 0;
 
 
 #define X(s)			\
@@ -289,29 +293,40 @@ int idewrite( char * b, unsigned bloc )
 	idesetblock(1, bloc, 0);
 
 	// Disable interrupts, aka synchronous read nIEN=1 (0000 0010b)
-	outb(DEVCTL, 0x2);
+	outb(DEVCTL, 0x0);
 
 	// Insert command 
 	outb(CMD, IDE_CMD_WRITE);
 	X("\nWrite command sent...\n");
 
+	while (IRQ_RECEIVED != 1)
+	{
+		// wait
+		X("waiting for interrupt\n");
+		int r;
+		r = inb(STATUSALT);
+		decodeStatusRegister(r);
+	}
+	IRQ_RECEIVED = 0;
+
+
 	// Notes: When you send a command byte and the RDY bit of the Status Registers is clear, you may have to wait (technically up to 30 seconds) 
 	//		  for the drive to spin up, before DRQ sets. You may also need to ignore ERR and DF the first four times that you read the Status, if you are polling.
 	//Wait DATA REQUEST
-	int r;
-	unsigned times=0;
+	// int r;
+	// unsigned times=0;
 
 	// Mask of STATUSALT with 1000_1000 (bits BSY and DRQ), compares it to 0000_1000
 	//	Similarly to other cases, checks for BSY=0 and DRQ=1
-  	while(((r = inb(STATUSALT)) & (IDE_BSY|IDE_DRQ)) != IDE_DRQ) 
-	{
-		// If the check has been done more than 4 times, mask STATUSALT with the Error bit, if 1 return error.
-		decodeStatusRegister(r);
-		if ((times > 4) && ((r&IDE_ERR) == IDE_ERR)) return -1;
-		times++;
-	}
-	X("\n");
-	decodeStatusRegister(r);
+  	// while(((r = inb(STATUSALT)) & (IDE_BSY|IDE_DRQ)) != IDE_DRQ) 
+	// {
+	// 	// If the check has been done more than 4 times, mask STATUSALT with the Error bit, if 1 return error.
+	// 	decodeStatusRegister(r);
+	// 	if ((times > 4) && ((r&IDE_ERR) == IDE_ERR)) return -1;
+	// 	times++;
+	// }
+	// X("\n");
+	// decodeStatusRegister(r);
 
 	X("\nWriting data...");
 	//Write DATA
@@ -349,34 +364,47 @@ int ideread( char * b, unsigned bloc )
 	// Prepare parameters 
 	idesetblock(1, bloc, 0);
 
-	// Disable interrupts, aka synchronous read nIEN=1 (0000 0010b)
-	outb(DEVCTL, 0x2);
+	// Disable interrupts, aka synchronous read nIEN=1 (0000 0010b) or
+	// Enable  interrupts, aka synchronous read nIEN=0 (0000 0000b)
+	outb(DEVCTL, 0x0);
 
 	// Insert command 
 	outb(CMD, IDE_CMD_READ);
 	X("\nRead command sent...\n");
 
-	// Notes: When you send a command byte and the RDY bit of the Status Registers is clear, you may have to wait (technically up to 30 seconds) for the drive to spin up, before DRQ sets. You may also need to ignore ERR and DF the first four times that you read the Status, if you are polling.
-
-	X("Wait command answer...\n");
-	//Wait DATA REQUEST
-	int r;
-	unsigned times=0;
-  	while(((r = inb(STATUSALT)) & (IDE_BSY|IDE_DRQ)) != IDE_DRQ) 
+	while (IRQ_RECEIVED != 1)
 	{
+		// wait
+		X("waiting for interrupt\n");
+		int r;
+		r = inb(STATUSALT);
 		decodeStatusRegister(r);
-		if ((times >4) && ((r&IDE_ERR) == IDE_ERR)) return -1;
-		times++;
 	}
-	X("\n");
-	decodeStatusRegister(r);
+	IRQ_RECEIVED = 0;
+
+
+	// Notes: When you send a command byte and the RDY bit of the Status Registers is clear, you may have to wait (technically up to 30 seconds) 
+	//  for the drive to spin up, before DRQ sets. You may also need to ignore ERR and DF the first four times that you read the Status, if you are polling.
+
+	// X("Wait command answer...\n");
+	// //Wait DATA REQUEST
+	// int r;
+	// unsigned times=0;
+  	// while(((r = inb(STATUSALT)) & (IDE_BSY|IDE_DRQ)) != IDE_DRQ) 
+	// {
+	// 	decodeStatusRegister(r);
+	// 	if ((times >4) && ((r&IDE_ERR) == IDE_ERR)) return -1;
+	// 	times++;
+	// }
+	// X("\n");
+	// decodeStatusRegister(r);
 
 	X("\nReading data...");
-	//Write DATA
+	// Read DATA
 	insl(DATA, b, BLOCK_SIZE/4);
 
 	X("\nData Read.");
-	//Wait for transfer finalization
+	// Wait for transfer finalization
 	
 #if 0
   	while(((r = inb(STATUSALT)) & (IDE_BSY|IDE_DRQ)) != 0)
@@ -461,11 +489,13 @@ void decodeStatusRegister(Byte b)
 void ide_routine(void)
 {
 	X("\n=============== IDE interrupt ===============\n");
-	//Byte b = inb(STATUSALT);
-	Byte b = inb(STATUS);
+	//Byte b = inb(STATUS);
+	Byte b = inb(STATUSALT);
 
 	decodeStatusRegister(b);
 
+	// Temp tests
+	IRQ_RECEIVED = 1;
 }
 
 int ide_check_disk()
