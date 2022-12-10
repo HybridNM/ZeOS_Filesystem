@@ -87,10 +87,6 @@ void func()
 	else clustersFAT = biosParameterBlock.numSectorsLSC * biosParameterBlock.sectorsPerCluster;
 
 
-	// Byte FAT[clustersFAT]; // ?????
-
-	DWord * FAT; // 32 bit entries // move to end
-
 	// 32 bit DWord will only support FAT_size of up to ~3900MB drives (less than 4GB)
 	DWord FAT_size = 4*clustersFAT; // size in bytes, 32 bits per entry
 	DWord numFrames = FAT_size/0x1000;
@@ -105,10 +101,6 @@ void func()
 		// set_ss_pag(?,?,?)
 	}
 	
-	
-
-
-
 
 	DWord currentFATsector;
 
@@ -153,7 +145,22 @@ char * trimPath(char * path)
 
 char * extractFilename(char * path)
 {
+	size_t pathSize = sizeof(path);
+	int i = 0;
+	int newPathStart = 0;
 
+
+	char filename[8];
+
+	if (path[0] == '/')
+	{
+		i++;
+		newPathStart++;
+	}
+
+	// Copy the first filename and fill the rest with blank spaces
+	for (i; i<pathSize || path[i]!='/'; i++) filename[i-newPathStart] = path[i];
+	for (i; i<pathSize; i++) filename[i] = ' ';
 }
 
 
@@ -202,9 +209,14 @@ int recursiveSearch(char * path, DWord cluster)
 						///////// THIS SEARCHES ANY SUBDIR, IT SHOULD FOLLOW THE PATH ///////
 						///////// FIX ////////////////
 
-						// Build the subdir first cluster number from the two halves
-						DWord subDirCluster = ((DWord)(sector[i+0x14]))<<16 | sector[i+0x1A];
-						return recursiveSearch(path, subDirCluster);
+						if (compareFilename(filename, &sector[i+0x0B]))
+						{
+							// Build the subdir first cluster number from the two halves
+							DWord subDirCluster = ((DWord)(sector[i+0x14]))<<16 | sector[i+0x1A];
+							return recursiveSearch(path, subDirCluster);
+						}
+
+						
 					}
 					// parse filename and compare, return file start cluster if found
 			}
