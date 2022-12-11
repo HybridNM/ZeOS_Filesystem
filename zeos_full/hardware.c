@@ -118,9 +118,9 @@ __asm__ __volatile__(
 
   "sti"
   : /*no output*/
-  : "i" (0xf8)       /* 0xFF = 11111111 -> all bits disabled */
-  , "i" (0xff)       /* 0xBF = 10111111 */
-  //, "i" (0xbf)       /* 0xBF = 10111111 */
+  : "i" (0xf8)       /* 0xF8 = 11111000 -> Timer, KB, PIC cascading enabled */
+  , "i" (0xbf)       /* 0xBF = 10111111 -> IDE drive0 enabled */
+
   : "%al" );
 }
 

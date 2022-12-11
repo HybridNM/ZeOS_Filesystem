@@ -79,17 +79,22 @@ void initializeRootDir()
 }
 
 
-void func()
+// Gets the value of some important variables and then copies the FAT to memory
+void FATtoMemory()
 {
+	// VARIABLE INIZIALISATION
+
 	// Check for actual number of sectors in the FAT
 	if (biosParameterBlock.numSectors == 0)
 		 clustersFAT = biosParameterBlock.numSectors * biosParameterBlock.sectorsPerCluster;
 	else clustersFAT = biosParameterBlock.numSectorsLSC * biosParameterBlock.sectorsPerCluster;
 
-
 	// 32 bit DWord will only support FAT_size of up to ~3900MB drives (less than 4GB)
 	DWord FAT_size = 4*clustersFAT; // size in bytes, 32 bits per entry
 	DWord numFrames = FAT_size/0x1000;
+
+
+	// MEMORY ALLOCATION
 
 	int frames[numFrames]; // needed memory frames to allocate the FAT
 	// 20 pages for 128MB drive
@@ -98,9 +103,15 @@ void func()
 	{
 		frames[i] = alloc_frame();
 		// add error check later
-		// set_ss_pag(?,?,?)
+
+		// !!!!!!!!!!!!!!!!!!!!!!!!!!!!
+		// paginas reservadas, ahora toca buscar la primera direccion 
+		// y asignarsela al puntero FAT
+		// !!!!!!!!!!!!!!!!!!!!!!!!!!!!
 	}
 	
+
+	// COPYING FAT FROM DISK
 
 	DWord currentFATsector;
 
@@ -112,10 +123,8 @@ void func()
 		currentFATsector = biosParameterBlock.reservedSectors + i;
 		ideread(FAT+i*512, currentFATsector);
 	}
-	
-	
-
 }
+
 
 // Takes a path and cuts up to the first '/', example:
 //  /path/to/file -> path/to/file
@@ -143,15 +152,18 @@ char * trimPath(char * path)
 // ADD ERROR CHECKS FOR BOTH
 // ADD ERROR CHECKS FOR BOTH
 
+// Takes a path and removes everything but the first non '/' directory.
+//  filling with spaces up to 8 characters, example:
+//  /path/to/file -> "path    "
+//   path/to/file -> "path    "
 char * extractFilename(char * path)
 {
 	size_t pathSize = sizeof(path);
 	int i = 0;
 	int newPathStart = 0;
-
-
 	char filename[8];
 
+	// Same as trimPath()
 	if (path[0] == '/')
 	{
 		i++;
@@ -164,12 +176,26 @@ char * extractFilename(char * path)
 }
 
 
+// Returns 1 if the 8 bytes of path1 and path2 are equal
+int compareFilename(char * path1, char * path2)
+{
+	for (int i=0; i<8; i++)
+	{
+		if (path1[i] != path2[i]) return 0;
+	}
+	return 1;	
+}
+
+
+// TBD
 int searchFile(char * path, DWord cluster)
 {
 	// call recursive function
 }
 
 // Returns first cluster of the file
+//  'path' is a Unix-style path to the file to be accessed
+//  'cluster' is the first cluster of the directory to be scanned
 int recursiveSearch(char * path, DWord cluster)
 {
 	Byte sector[512];
@@ -206,19 +232,23 @@ int recursiveSearch(char * path, DWord cluster)
 					if (sector[i+0x0B] == 0x80); // entry is reserved
 					if (sector[i+0x0B] == 0x10)  // entry is a subdirectory
 					{
-						///////// THIS SEARCHES ANY SUBDIR, IT SHOULD FOLLOW THE PATH ///////
-						///////// FIX ////////////////
-
+						// Check if the subdirectory is part of the path, if it is, search
+						//  recursively in the cluster taken from its entry, otherwise skip
 						if (compareFilename(filename, &sector[i+0x0B]))
 						{
 							// Build the subdir first cluster number from the two halves
 							DWord subDirCluster = ((DWord)(sector[i+0x14]))<<16 | sector[i+0x1A];
 							return recursiveSearch(path, subDirCluster);
 						}
-
-						
 					}
-					// parse filename and compare, return file start cluster if found
+					// Entry is not a subdirectory (thereforse it's a file), if the
+					//  names match, then the file has been found, return the first
+					//  cluster built by the two halves
+					else if (compareFilename(filename, &sector[i+0x0B]))
+					{
+						DWord fileCluster = ((DWord)(sector[i+0x14]))<<16 | sector[i+0x1A];
+						return fileCluster;
+					}
 			}
 		}
 	}
@@ -226,29 +256,39 @@ int recursiveSearch(char * path, DWord cluster)
 	//  0x0FFFFFF8-0x0FFFFFFF, 0x0FFFFFF7 would be a bad sector
 	if (FAT[cluster] > 0x0FFFFFF7) return -1; 
 	else {
-		// Follow cluster chain
+		// Otherwise follow cluster chain
 		return recursiveSearch(path, FAT[cluster]);
 	}
 }
 
-// write would need a previous open, then use a specific FD for it to write to disk
 
 
-// writes should update both the memory and the disk FATs
+int readFile() // think about how to implement this (pointers, seek, etc)
+{
 
-// create dir should set first entry first byte to 0x00
-
-
-
-
-// Si una entrada de la FAT vale 0x0FFFFFF7 es un bad sector
-// Si vale 0x0FFFFFF8-0x0FFFFFFF es que no hay nada más en la cadena
+}
 
 
-// Esqueleto de lectura multi-sector
-// Se supone un cluster de 4KB, es decir, 8 sectores de 512B
+int writeFile()
+{
+	// write would need a previous open, then use a specific FD for it to write to disk
+	// writes should update both the memory and the disk FATs
+}
 
-// for (int i=0; i<biosParameterBlock.sectorsPerCluster; i++)
-// {
-//	   ideread(b+(512*i), sector + i);
-// }
+
+int createFile()
+{
+	// look for an empty entry, use and update whereClusters is <
+	// update the directory where the file resides, careful not to overwrite anything
+
+	// diferent func for directories or parameters with options?
+	// create dir should set first entry first byte to 0x00
+}
+
+
+int deleteFile()
+{
+	// follow the cluster chain flagging all entries as available
+	// remove the entry from the directory and flag accordingly
+}
+
