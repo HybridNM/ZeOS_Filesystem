@@ -13,10 +13,10 @@ FSInfo fsInfoStruct;
 
 DirectoryEntry rootDirectory;
 
-DWord * FAT;
-
-// Other global variables
-DWord clustersFAT;
+// File Allocation Table, of fixed size and cluster size (4096B cluster)
+// Drive is 5120000 byles long (~4.9MB): 5120000/4096=1250
+const int FAT_SIZE = 1250;
+DWord FAT[FAT_SIZE];
 
 
 // Start up the file system
@@ -37,24 +37,24 @@ void getFAT32attributes()
 	ideread(bootRecPointer, 0);
 	ideread(fsinfoPointer, 1);
 
-	biosParameterBlock.bytesPerSector 	 = *(Word*)(bootRecPointer + 0x0B);
+	biosParameterBlock.bytesPerSector 	 = *(Word*)(bootRecPointer  + 0x0B);
 	biosParameterBlock.sectorsPerCluster = *(bootRecPointer + 0x0D);
-	biosParameterBlock.reservedSectors 	 = *(Word*)(bootRecPointer + 0x0E);
+	biosParameterBlock.reservedSectors 	 = *(Word*)(bootRecPointer  + 0x0E);
 	biosParameterBlock.FATs 			 = *(bootRecPointer + 0x10);
-	biosParameterBlock.rootDirEntries 	 = *(Word*)(bootRecPointer + 0x11);
-	biosParameterBlock.numSectors 		 = *(Word*)(bootRecPointer + 0x13);
+	biosParameterBlock.rootDirEntries 	 = *(Word*)(bootRecPointer  + 0x11);
+	biosParameterBlock.numSectors 		 = *(Word*)(bootRecPointer  + 0x13);
 	biosParameterBlock.mediaDescriptor 	 = *(bootRecPointer + 0x15);
-	biosParameterBlock.sectorsPerTrack 	 = *(Word*)(bootRecPointer + 0x16);
-	biosParameterBlock.numHeads 		 = *(Word*)(bootRecPointer + 0x18);
+	biosParameterBlock.sectorsPerTrack 	 = *(Word*)(bootRecPointer  + 0x16);
+	biosParameterBlock.numHeads 		 = *(Word*)(bootRecPointer  + 0x18);
 	biosParameterBlock.hiddenSectors 	 = *(DWord*)(bootRecPointer + 0x1A);
 	biosParameterBlock.numSectorsLSC 	 = *(DWord*)(bootRecPointer + 0x20);
 
 	extendedBootRecord.sectorsPerFAT 	 = *(DWord*)(bootRecPointer + 0x24);
-	extendedBootRecord.flags 			 = *(Word*)(bootRecPointer + 0x28);
-	extendedBootRecord.FATversion 		 = *(Word*)(bootRecPointer + 0x2A);
+	extendedBootRecord.flags 			 = *(Word*)(bootRecPointer  + 0x28);
+	extendedBootRecord.FATversion 		 = *(Word*)(bootRecPointer  + 0x2A);
 	extendedBootRecord.rootClusterNum 	 = *(DWord*)(bootRecPointer + 0x2C);
-	extendedBootRecord.FSInfoSectorNum 	 = *(Word*)(bootRecPointer + 0x30);
-	extendedBootRecord.bkBootSectorNum 	 = *(Word*)(bootRecPointer + 0x32);
+	extendedBootRecord.FSInfoSectorNum 	 = *(Word*)(bootRecPointer  + 0x30);
+	extendedBootRecord.bkBootSectorNum 	 = *(Word*)(bootRecPointer  + 0x32);
 	extendedBootRecord.driveNum 		 = *(bootRecPointer + 0x40);
 	extendedBootRecord.signature 		 = *(bootRecPointer + 0x42);
 
@@ -65,6 +65,13 @@ void getFAT32attributes()
 	fsInfoStruct.lastKnownCluster 	= *(DWord*)(fsinfoPointer + 0x1E8);
 	fsInfoStruct.whereClusters 		= *(DWord*)(fsinfoPointer + 0x1EC);
 	fsInfoStruct.trailSignature 	= *(DWord*)(fsinfoPointer + 0x1FC);
+
+	// The file system has size restrictions due to its simple implementation
+	if (biosParameterBlock.bytesPerSector != 512 && biosParameterBlock.sectorsPerCluster != 8)
+	{
+		// Inform of error
+	}
+	
 }
 
 
@@ -76,53 +83,6 @@ void initializeRootDir()
 	rootDirectory.first_cluster_hi = (extendedBootRecord.rootClusterNum >> 16);
 	rootDirectory.first_cluster_lo = (extendedBootRecord.rootClusterNum);
 	for (int i=1; i<11; i++) rootDirectory.filename[i] = ' ';
-}
-
-
-// Gets the value of some important variables and then copies the FAT to memory
-void FATtoMemory()
-{
-	// VARIABLE INIZIALISATION
-
-	// Check for actual number of sectors in the FAT
-	if (biosParameterBlock.numSectors == 0)
-		 clustersFAT = biosParameterBlock.numSectors * biosParameterBlock.sectorsPerCluster;
-	else clustersFAT = biosParameterBlock.numSectorsLSC * biosParameterBlock.sectorsPerCluster;
-
-	// 32 bit DWord will only support FAT_size of up to ~3900MB drives (less than 4GB)
-	DWord FAT_size = 4*clustersFAT; // size in bytes, 32 bits per entry
-	DWord numFrames = FAT_size/0x1000;
-
-
-	// MEMORY ALLOCATION
-
-	int frames[numFrames]; // needed memory frames to allocate the FAT
-	// 20 pages for 128MB drive
-
-	for (int i=0; i<numFrames; i++)
-	{
-		frames[i] = alloc_frame();
-		// add error check later
-
-		// !!!!!!!!!!!!!!!!!!!!!!!!!!!!
-		// paginas reservadas, ahora toca buscar la primera direccion 
-		// y asignarsela al puntero FAT
-		// !!!!!!!!!!!!!!!!!!!!!!!!!!!!
-	}
-	
-
-	// COPYING FAT FROM DISK
-
-	DWord currentFATsector;
-
-	// Read the FAT from disk to memory, sector by sector
-	for (int i=0; i<extendedBootRecord.sectorsPerFAT; i++)
-	{
-		// The FAT region starts right after the reserved sectors, which include 
-		//  the boot sector, the FSInfo and sometimes other sectors
-		currentFATsector = biosParameterBlock.reservedSectors + i;
-		ideread(FAT+i*512, currentFATsector);
-	}
 }
 
 
@@ -187,11 +147,34 @@ int compareFilename(char * path1, char * path2)
 }
 
 
+// Reads a directory entry into a variable given a sector and entry
+DirectoryEntry getDirectoryEntry(char * sector, int offset)
+{
+	// In case the offset is not a multiple of 32, returns the first entry
+	if (offset % 32 != 0) offset = 0;
+
+	DirectoryEntry entry;
+
+	// Read all useful fields into the entry
+	for (int i=0; i<11; i++)
+	{
+		entry.filename[i] = sector[1];
+	}
+	entry.attributes = sector[0x0B];
+	entry.first_cluster_hi = sector[0x14];
+	entry.first_cluster_lo = sector[0x1A];
+	entry.size = sector[0x1C];
+
+	return entry;
+}
+
+
 // TBD
 int searchFile(char * path, DWord cluster)
 {
 	// call recursive function
 }
+
 
 // Returns first cluster of the file
 //  'path' is a Unix-style path to the file to be accessed
@@ -202,6 +185,7 @@ int recursiveSearch(char * path, DWord cluster)
 
 	char * filename = extractFilename(path);
 	char * nextPath = trimPath(path);
+	
 
 	// Each cluster has multiple consecutive sectors, so we can read them consecutively
 	for (int sectorNum=0; sectorNum<biosParameterBlock.sectorsPerCluster; sectorNum++)
@@ -214,10 +198,14 @@ int recursiveSearch(char * path, DWord cluster)
 		// Read a directory entry by entry (each one is 32 bytes long)
 		for (int i=0; i<512; i+=32)
 		{
+			DirectoryEntry entry = getDirectoryEntry(*sector, i);
+
 			// Read the first byte of the directory entry, which contains either
 			//  the file name or special codes, such as the following:
-			switch (sector[i])
+			switch (entry.filename[0])
 			{
+				// CREATE DIRECTORY ENTRY AND READ FROM THERE
+
 				case 0x00: // entry is empty and there are no further entries, return
 					return -1;
 					break;
@@ -229,32 +217,32 @@ int recursiveSearch(char * path, DWord cluster)
 					break;
 
 				default: // used entry with a filename
-					if (sector[i+0x0B] == 0x80); // entry is reserved
-					if (sector[i+0x0B] == 0x10)  // entry is a subdirectory
+					if (entry.attributes == 0x80); // entry is reserved
+					if (entry.attributes == 0x10)  // entry is a subdirectory
 					{
 						// Check if the subdirectory is part of the path, if it is, search
 						//  recursively in the cluster taken from its entry, otherwise skip
-						if (compareFilename(filename, &sector[i+0x0B]))
+						if (compareFilename(filename, &entry.filename))
 						{
 							// Build the subdir first cluster number from the two halves
-							DWord subDirCluster = ((DWord)(sector[i+0x14]))<<16 | sector[i+0x1A];
-							return recursiveSearch(path, subDirCluster);
+							DWord subDirCluster = ((DWord)(entry.first_cluster_hi))<<16 | entry.first_cluster_lo;
+							return recursiveSearch(nextPath, subDirCluster);
 						}
 					}
 					// Entry is not a subdirectory (thereforse it's a file), if the
 					//  names match, then the file has been found, return the first
 					//  cluster built by the two halves
-					else if (compareFilename(filename, &sector[i+0x0B]))
+					else if (compareFilename(filename, &entry.filename))
 					{
-						DWord fileCluster = ((DWord)(sector[i+0x14]))<<16 | sector[i+0x1A];
+						DWord fileCluster = ((DWord)(entry.first_cluster_hi))<<16 | entry.first_cluster_lo;
 						return fileCluster;
 					}
 			}
 		}
 	}
-	// FAT chain is over, there are no more entries in the directory
+	// FAT chain is over, there are no more entries in the directory (also checks range)
 	//  0x0FFFFFF8-0x0FFFFFFF, 0x0FFFFFF7 would be a bad sector
-	if (FAT[cluster] > 0x0FFFFFF7) return -1; 
+	if (cluster > 1250 || FAT[cluster] > 0x0FFFFFF7) return -1; 
 	else {
 		// Otherwise follow cluster chain
 		return recursiveSearch(path, FAT[cluster]);
@@ -292,3 +280,52 @@ int deleteFile()
 	// remove the entry from the directory and flag accordingly
 }
 
+
+
+#if 0 // not used
+// Gets the value of some important variables and then copies the FAT to memory
+void FATtoMemory()
+{
+	// VARIABLE INIZIALISATION
+
+	// Check for actual number of sectors in the FAT
+	if (biosParameterBlock.numSectors == 0)
+		 clustersFAT = biosParameterBlock.numSectors * biosParameterBlock.sectorsPerCluster;
+	else clustersFAT = biosParameterBlock.numSectorsLSC * biosParameterBlock.sectorsPerCluster;
+
+	// 32 bit DWord will only support FAT_size of up to ~3900MB drives (less than 4GB)
+	DWord FAT_size = 4*clustersFAT; // size in bytes, 32 bits per entry
+	DWord numFrames = FAT_size/0x1000;
+
+
+	// MEMORY ALLOCATION
+
+	int frames[numFrames]; // needed memory frames to allocate the FAT
+	// 20 pages for 128MB drive
+
+	for (int i=0; i<numFrames; i++)
+	{
+		frames[i] = alloc_frame();
+		// add error check later
+
+		// !!!!!!!!!!!!!!!!!!!!!!!!!!!!
+		// paginas reservadas, ahora toca buscar la primera direccion 
+		// y asignarsela al puntero FAT
+		// !!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	}
+	
+
+	// COPYING FAT FROM DISK
+
+	DWord currentFATsector;
+
+	// Read the FAT from disk to memory, sector by sector
+	for (int i=0; i<extendedBootRecord.sectorsPerFAT; i++)
+	{
+		// The FAT region starts right after the reserved sectors, which include 
+		//  the boot sector, the FSInfo and sometimes other sectors
+		currentFATsector = biosParameterBlock.reservedSectors + i;
+		ideread(FAT+i*512, currentFATsector);
+	}
+}
+#endif
