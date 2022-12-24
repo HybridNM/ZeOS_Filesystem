@@ -1,22 +1,15 @@
 /*
  * sys.c - Syscalls implementation
  */
+
 #include <devices.h>
-
 #include <utils.h>
-
 #include <io.h>
-
 #include <mm.h>
-
 #include <mm_address.h>
-
 #include <sched.h>
-
 #include <errno.h>
-
 #include <interrupt.h>
-
 #include <sem.h>
 
 #define LECTURA 0
@@ -26,9 +19,13 @@ extern unsigned PID;
 
 int check_fd(int fd, int permissions)
 {
-  if (fd!=1) return -EBADF; 
-  if (permissions!=ESCRIPTURA) return -EACCES;
-  return 0;
+	// fd=1 is the screen, and can't be read
+	if (permissions == LECTURA && fd == 1) return -EBADF;
+	if (fd != 1 && open_file_table[fd] == 0) return -EBADF;
+  
+	// No file permissions nor users, so no problem with permissions
+	// if (permissions!=ESCRIPTURA) return -EACCES;
+	return 0;
 }
 
 int sys_ni_syscall()
@@ -44,11 +41,16 @@ int sys_gettime()
 
 #define TAM_BUFFER 512
 
-int sys_write(int fd, char *buffer, int nbytes) {
-char localbuffer [TAM_BUFFER];
-int bytes_left;
-int ret;
+// TABLA FICHEROS ABIERTOS: FD, CLUSTER, R/W (global)
+// + TABLA DE CANALES (proceso)
 
+int sys_write(int fd, char *buffer, int nbytes) 
+{
+	char localbuffer [TAM_BUFFER];
+	int bytes_left;
+	int ret;
+
+	// Parameter check
 	if ((ret = check_fd(fd, ESCRIPTURA)))
 		return ret;
 	if (nbytes < 0)
@@ -56,24 +58,76 @@ int ret;
 	if (!access_ok(VERIFY_READ, buffer, nbytes))
 		return -EFAULT;
 	
-	bytes_left = nbytes;
-	while (bytes_left > TAM_BUFFER) {
-		copy_from_user(buffer, localbuffer, TAM_BUFFER);
-		ret = sys_write_console(localbuffer, TAM_BUFFER);
-		if (ret < 0 )
-			return ret;
-		bytes_left-=ret;
-		buffer+=ret;
+	// Write to console
+	if (fd == 1)
+	{
+		bytes_left = nbytes;
+		while (bytes_left > TAM_BUFFER) 
+		{
+			copy_from_user(buffer, localbuffer, TAM_BUFFER);
+			ret = sys_write_console(localbuffer, TAM_BUFFER);
+			if (ret < 0 )
+				return ret;
+			bytes_left-=ret;
+			buffer+=ret;
+		}
+		if (bytes_left > 0) 
+		{
+			copy_from_user(buffer, localbuffer,bytes_left);
+			ret = sys_write_console(localbuffer, bytes_left);
+			if (ret < 0 )
+				return ret;
+			bytes_left-=ret;
+		}
+		return (nbytes-bytes_left);
 	}
-	if (bytes_left > 0) {
-		copy_from_user(buffer, localbuffer,bytes_left);
-		ret = sys_write_console(localbuffer, bytes_left);
-		if (ret < 0 )
-			return ret;
-		bytes_left-=ret;
+	// Write to file
+	if (fd > 1)
+	{
+		// get path name from open file table and send it to the filesystem
+		//
+		/* code */
 	}
-	return (nbytes-bytes_left);
+	
 }
+
+int sys_read(int fd, char *buffer, int nbytes)
+{
+	int ret, bytes_left;
+
+	// Parameter check
+	if ((ret = check_fd(fd, LECTURA)))
+		return ret;
+	if (nbytes < 0)
+		return -EINVAL;
+	// Skip verify step, since reading is not as dangerous as writing
+
+
+	bytes_left = nbytes;
+	while (bytes_left < TAM_BUFFER)
+	{
+		// maybe copy_to_user
+		bytes_left -= TAM_BUFFER;
+	}
+	
+
+} 
+
+
+int sys_open(char *path, int mode)
+{
+	// search in tabla canales for a free space
+	// return fd number
+}
+
+
+int sys_close(char *path)
+{
+	// if not open return -1
+}
+
+
+
 
 int sys_getpid()
 {

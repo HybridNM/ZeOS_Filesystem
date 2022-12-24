@@ -10,6 +10,12 @@
 
 int write(int fd, char *buffer, int size);
 
+int read(int fd, char *buffer, int size);
+
+int open(char *path, int mode);
+
+int close(char *path);
+
 void itoa(int a, char *b);
 
 int strlen(char *a);
