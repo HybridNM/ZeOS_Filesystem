@@ -13,15 +13,19 @@
 #define NR_TASKS      10
 #define KERNEL_STACK_SIZE	1024
 
+#define CHANNEL_TABLE_SIZE 10
+#define OPEN_FILE_TABLE_SIZE 50
+
 enum state_t { ST_RUN, ST_READY, ST_BLOCKED };
 
 struct task_struct {
-  int PID;			/* Process ID. This MUST be the first field of the struct. */
-  unsigned quantum;		/* Initial QUANTUM per process. */
+  int PID;					/* Process ID. This MUST be the first field of the struct. */
+  unsigned quantum;			/* Initial QUANTUM per process. */
   struct list_head list;	/* List anchor */
-  char *kernel_esp;		/* Task-Switch Restore point */
+  char *kernel_esp;			/* Task-Switch Restore point */
   page_table_entry * dir_pages_baseAddr;
   struct stats stats;
+  channel_table_entry channel_table[CHANNEL_TABLE_SIZE];
 };
 
 union task_union {
@@ -59,9 +63,11 @@ struct task_struct *list_head_to_task_struct(struct list_head *l);
 
 int allocate_DIR(struct task_struct *t);
 
-page_table_entry * get_PT (struct task_struct *t) ;
+page_table_entry * get_PT (struct task_struct *t);
 
-page_table_entry * get_DIR (struct task_struct *t) ;
+page_table_entry * get_DIR (struct task_struct *t);
+
+page_table_entry * get_CHT (struct task_struct *t);
 
 /* Headers for the scheduling policy */
 void sched_next_rr();

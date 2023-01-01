@@ -11,20 +11,42 @@
 #include <errno.h>
 #include <interrupt.h>
 #include <sem.h>
+#include <types.h>
 
 #define LECTURA 0
 #define ESCRIPTURA 1
 
 extern unsigned PID;
 
+open_file_table_entry open_file_table[OPEN_FILE_TABLE_SIZE];
+
+
+void init_open_file_table()
+{
+	for (int i=0; i<OPEN_FILE_TABLE_SIZE; i++)
+	{
+		open_file_table[i].startCluster = 0;
+		open_file_table[i].openCount = 0;
+		open_file_table[i].accesOffset = 0;
+		open_file_table[i].permissions = -1;
+	}
+}
+
 int check_fd(int fd, int permissions)
 {
+	// Get a reference to the process' channel table and the open file table entry
+	channel_table_entry *process_ch_t = get_CHT( current() );
+	int OFT_entry = process_ch_t[fd-2].OFT_entry_num;
+
 	// fd=1 is the screen, and can't be read
-	if (permissions == LECTURA && fd == 1) return -EBADF;
-	if (fd != 1 && open_file_table[fd] == 0) return -EBADF;
-  
-	// No file permissions nor users, so no problem with permissions
-	// if (permissions!=ESCRIPTURA) return -EACCES;
+	if (fd == 1 && permissions == LECTURA) return -EBADF;
+	
+	// startCluster=0 means the entry is not in use, therefore, return bad file number error
+	if (fd != 1 && open_file_table[OFT_entry].startCluster == 0) return -EBADF;
+
+	// Check that operation permissions match with the open file's
+	if (permissions != open_file_table[OFT_entry].permissions) return -EACCES;
+
 	return 0;
 }
 
@@ -41,8 +63,6 @@ int sys_gettime()
 
 #define TAM_BUFFER 512
 
-// TABLA FICHEROS ABIERTOS: FD, CLUSTER, R/W (global)
-// + TABLA DE CANALES (proceso)
 
 int sys_write(int fd, char *buffer, int nbytes) 
 {
@@ -84,11 +104,22 @@ int sys_write(int fd, char *buffer, int nbytes)
 	// Write to file
 	if (fd > 1)
 	{
-		// get path name from open file table and send it to the filesystem
-		//
-		/* code */
+		// Get a reference to the process' channel table and the open file table entry
+		channel_table_entry *process_ch_t = get_CHT( current() );
+		int OFT_entry = process_ch_t[fd-2].OFT_entry_num;
+
+		// Call the file system function
+		DWord firstCluster = open_file_table[OFT_entry].startCluster;
+		int offset = open_file_table[OFT_entry].access_offset;
+		int ret = writeFile(firstCluster, buffer, nbytes, offset);
+
+		if (ret != 0) return -1; // TO DO: Error
+		else
+		{
+			open_file_table[OFT_entry].access_offset += nbytes;
+			return ret;
+		}
 	}
-	
 }
 
 int sys_read(int fd, char *buffer, int nbytes)
@@ -103,29 +134,142 @@ int sys_read(int fd, char *buffer, int nbytes)
 	// Skip verify step, since reading is not as dangerous as writing
 
 
-	bytes_left = nbytes;
-	while (bytes_left < TAM_BUFFER)
-	{
-		// maybe copy_to_user
-		bytes_left -= TAM_BUFFER;
-	}
-	
+	// Get a reference to the process' channel table and the open file table entry
+	channel_table_entry *process_ch_t = get_CHT( current() );
+	int OFT_entry = process_ch_t[fd-2].OFT_entry_num;
 
+	// Call the file system function
+	DWord firstCluster = open_file_table[OFT_entry].startCluster;
+	int offset = open_file_table[OFT_entry].access_offset;
+	int ret = readFile(firstCluster, buffer, nbytes, offset);
+
+	if (ret != 0) return -1; // TO DO: Error // copy to user o no?
+	else
+	{
+		open_file_table[OFT_entry].access_offset += nbytes;
+		return ret;
+	}
 } 
 
 
 int sys_open(char *path, int mode)
 {
-	// search in tabla canales for a free space
-	// return fd number
+	// TO DO: ver que hacer si hay una entrada al mismo fichero con otro modo
+	// TO DO: initialize channel table in process creation I guess?
+
+	DWord fileCluster;
+	int numReferences = 1; // Number of refs for the open file
+	int i;
+	int OFT_entry;
+
+	channel_table_entry *process_ch_t = get_CHT( current() );
+	
+	// Get the file cluster number, if the return value is 0 then 
+	//	the file doesn't exist and should be created
+	fileCluster = searchFile(path);
+	if (fileCluster == 0)
+	{
+		// TO DO: Parse and separate filename
+		int ret = createFile();
+	}
+
+	// Look for an entry in the channel table
+	for (i=0; i<CHANNEL_TABLE_SIZE; i++)
+	{
+		// Found a free entry
+		if (process_ch_t[i].fd != i+2)
+		{
+			// Now look for an available entry in the OFT
+			for (i=0; i<CHANNEL_TABLE_SIZE; i++)
+			{
+				if (open_file_table[i].startingCluster == 0) 
+				{
+					OFT_entry = i;
+					break;
+				}
+			}
+
+			// Channel table assigns the fd number based on its possition in the table,
+			//  so that fd_number = ch_table_entry_num+2, to skip fd=0 and fd=1, which are reserved
+			process_ch_t[i].fd = i+2;
+			process_ch_t[i].OFT_entry_num = OFT_entry;
+
+			// Go through the open file table to look for other entries pointing to the same file
+			// In that case we have to increase the number of references for those entries too
+			for (int j=0; j<OPEN_FILE_TABLE_SIZE; j++)
+			{
+				if (open_file_table[j].startingCluster == fileCluster)
+				{
+					// We could also just take the openCount of a different entry and add 1
+					open_file_table[j].openCount++;
+					numReferences++;
+				}
+			}
+
+			// Now that everything else is taken care of the OFT entry for this process can
+			//  be created, and filled with the corresponding information
+			open_file_table[OFT_entry].startCluster = fileCluster;
+			open_file_table[OFT_entry].openCount = numReferences;
+			open_file_table[OFT_entry].access_offset = 0;
+			open_file_table[OFT_entry].permissions = mode;
+			
+			// Return the fd
+			return i+2;
+		}
+	}
+	// No available space for new open files
+	return -EMFILE;
 }
 
 
-int sys_close(char *path)
+int sys_close(int fd)
 {
-	// if not open return -1
+	// Get a reference to the process' channel table
+	channel_table_entry *process_ch_t = get_CHT( current() );
+
+	// If the entry number 'fd' is not equal to fd (will usually be 0 in that case)
+	//  then the file is not open, and should return a 'bad file' error
+	if (process_ch_t[fd].fd != fd+2) return -EBADF;
+	
+	// Get the Open File Table entry 
+	int OFT_entry = process_ch_t[fd-2].OFT_entry_num;
+
+	// Get the first cluster of the file to search for other possible entries to the same file
+	DWord fileCluster = open_file_table[OFT_entry].startCluster;
+
+	// Reduce the number of references of all entries to the same file if there are multiple
+	if (open_file_table[OFT_entry].openCount > 1)
+	{
+		for (int i=0; i<OPEN_FILE_TABLE_SIZE; i++)
+		{
+			open_file_table[i].startCluster == fileCluster;
+			open_file_table[i].openCount--;
+		}
+	}
+	// Clear the OFT entry for this process
+	open_file_table[OFT_entry].startCluster = 0;
+	open_file_table[OFT_entry].openCount = 0;
+	open_file_table[OFT_entry].access_offset = 0;
+	open_file_table[OFT_entry].permissions = -1;
 }
 
+
+int sys_unlink(char * path) // A fancy name for the delete function
+{
+	// First check if the file is open by a different process
+	DWord fileCluster = searchFile(path);
+	
+	for (int i=0; i<OPEN_FILE_TABLE_SIZE; i++)
+	{
+		// If the file is open the function returns with an error
+		if (open_file_table[i].startingCluster == fileCluster)
+		{
+			return -EACCES; // Not the ideal code but we can make do with it
+		}
+	}
+
+	return deleteFile(path);
+}
 
 
 

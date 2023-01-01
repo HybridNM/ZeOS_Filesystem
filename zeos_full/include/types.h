@@ -152,4 +152,19 @@ typedef union
 } page_table_entry;
 
 
+typedef struct
+{
+	int fd;
+	int OFT_entry_num;
+} channel_table_entry;
+
+typedef struct
+{
+	DWord startCluster;
+	int openCount;
+	int access_offset;
+	int permissions;
+} open_file_table_entry;
+
+
 #endif  /* __TYPES_H__ */

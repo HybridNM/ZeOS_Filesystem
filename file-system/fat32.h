@@ -95,13 +95,26 @@ typedef struct
 } FSInfo;
 
 
-
-
-
-
+// Functions
 
 void getFAT32attributes();
+void initializeRootDir();
+void initializeFAT();
 
+void extractFilename(char * path, Byte * filename, int searchPos);
+int compareFilename(Byte * path1, Byte * path2);
+void deleteFATchain(DWord cluster);
+int setDirectoryEntry(Byte * sector, DirectoryEntry * entry, int offset);
+DirectoryEntry getDirectoryEntry(Byte * sector, int offset);
 
+DWord recursiveSearch(char * path, DWord cluster, int searchPos);
+DWord allocateCluster(DWord startingCluster);
+int searchFile(char * path);
+
+int readFile(DWord startingCluster, char * buffer, int size, int startByte);
+int writeFile(DWord startingCluster, char * buffer, int size, int startByte);
+
+int createFile(char * path, char * filename, Byte attributes);
+int deleteFile(char * path, char * filename);
 
 #endif

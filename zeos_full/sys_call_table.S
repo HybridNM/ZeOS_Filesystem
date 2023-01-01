@@ -7,10 +7,10 @@ ENTRY (sys_call_table)
 	.long sys_fork
 	.long sys_getstats
 	.long sys_write
-	.long sys_ni_syscall// 5
-	.long sys_ni_syscall
-	.long sys_ni_syscall
-	.long sys_ni_syscall
+	.long sys_read// 5
+	.long sys_open
+	.long sys_close
+	.long sys_unlink
 	.long sys_ni_syscall
 	.long sys_gettime// 10
 	.long sys_ni_syscall

@@ -41,6 +41,12 @@ page_table_entry * get_PT (struct task_struct *t)
 	return (page_table_entry *)(((unsigned int)(t->dir_pages_baseAddr->bits.pbase_addr))<<12);
 }
 
+/* get_CHT - Returns the Channel Table address for task 't' */
+page_table_entry * get_CHT (struct task_struct *t) 
+{
+	return t->channel_table;
+}
+
 
 int allocate_DIR(struct task_struct *t) 
 {
