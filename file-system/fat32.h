@@ -30,7 +30,7 @@ typedef struct
     DWord size;          	// Size in bytes
 } DirectoryEntry;
 
-// Attribute Byte bits: (*)
+/* Attribute Byte bits: (*)
 //
 //  7 6 5 4 3 2 1 0
 //  | | | | | | | |
@@ -44,7 +44,7 @@ typedef struct
 //  \  not currently used
 //   not currently used
 //
-//  If bits 3-0 are all set, it's a Long Name File
+//  If bits 3-0 are all set, it's a Long Name File */
 
 
 // BPB (Bios Parameter Block), is locatead near the start of the boot sector
@@ -102,10 +102,10 @@ void initializeRootDir();
 void initializeFAT();
 
 void extractFilename(char * path, Byte * filename, int searchPos);
-int compareFilename(Byte * path1, Byte * path2);
+int compareFilename(char * path1, char * path2);
 void deleteFATchain(DWord cluster);
 int setDirectoryEntry(Byte * sector, DirectoryEntry * entry, int offset);
-DirectoryEntry getDirectoryEntry(Byte * sector, int offset);
+DirectoryEntry getDirectoryEntry(char * sector, int offset);
 
 DWord recursiveSearch(char * path, DWord cluster, int searchPos);
 DWord allocateCluster(DWord startingCluster);

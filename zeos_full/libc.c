@@ -43,28 +43,139 @@ int strlen(char *a)
   return i;
 }
 
+/* TO DO: add to libc.h too
+int lseek(int fd, int offset, int whence) // whence=0: SEEK_SET, whence=1: SEEK_CUR
+{
+	// Invalid whence value
+	if (whence != 0 && whence != 1) return -EINVAL; // -22
+	
+	channel_table_entry * ch_table; // TO DO: process channel table
 
-int write(int fd, char *buffer, int nbytes) {
-int ret;
-__asm__ __volatile__ (
-		"pushl %%ebx \n"
-		"movl $4, %%eax\n"
-		"movl %1, %%ebx\n"
-		"movl %2, %%ecx\n"
-		"movl %3, %%edx\n"
-		"int $0x80\n"
-		"popl %%ebx \n"
-		"movl %%eax, %0"
-		: "=g" (ret)
-		: "g" (fd), "g" (buffer), "g" (nbytes)
-		);
+	// File not open by the process
+	if (ch_table[fd-2]->fd != fd)
+	{
+		return -EBADF; // -9
+	}
+	// Get OFT entry from ch_table
+	// if whence: access_offset+=offset + return that value
+	// else access_offset=offset + return that value
+}
+*/
 
-if (ret < 0) {
-	errno = -ret;
-	ret = -1;
+// I/O Functions
+
+int write(int fd, char *buffer, int nbytes) 
+{
+	int ret;
+	__asm__ __volatile__ (
+			"pushl %%ebx \n"
+			"movl $4, %%eax\n"
+			"movl %1, %%ebx\n"
+			"movl %2, %%ecx\n"
+			"movl %3, %%edx\n"
+			"int $0x80\n"
+			"popl %%ebx \n"
+			"movl %%eax, %0"
+			: "=g" (ret)
+			: "g" (fd), "g" (buffer), "g" (nbytes)
+			);
+
+	if (ret < 0) {
+		errno = -ret;
+		ret = -1;
+	}
+	return ret;
 }
-return ret;
+
+int read(int fd, char *buffer, int nbytes)
+{
+	int ret;
+	__asm__ __volatile__ (
+			"pushl %%ebx \n"
+			"movl $5, %%eax\n"
+			"movl %1, %%ebx\n"
+			"movl %2, %%ecx\n"
+			"movl %3, %%edx\n"
+			"int $0x80\n"
+			"popl %%ebx \n"
+			"movl %%eax, %0"
+			: "=g" (ret)
+			: "g" (fd), "g" (buffer), "g" (nbytes)
+			);
+
+	if (ret < 0) {
+		errno = -ret;
+		ret = -1;
+	}
+	return ret;
 }
+
+int open(char *path, int mode)
+{
+	int ret;
+	__asm__ __volatile__ (
+			"pushl %%ebx \n"
+			"movl $6, %%eax\n"
+			"movl %1, %%ebx\n"
+			"movl %2, %%ecx\n"
+			"int $0x80\n"
+			"popl %%ebx \n"
+			"movl %%eax, %0"
+			: "=g" (ret)
+			: "g" (path), "g" (mode)
+			);
+
+	if (ret < 0) {
+		errno = -ret;
+		ret = -1;
+	}
+	return ret;
+}
+
+
+int close(int fd)
+{
+	int ret;
+	__asm__ __volatile__ (
+			"pushl %%ebx \n"
+			"movl $7, %%eax\n"
+			"movl %1, %%ebx\n"
+			"int $0x80\n"
+			"popl %%ebx \n"
+			"movl %%eax, %0"
+			: "=g" (ret)
+			: "g" (fd)
+			);
+
+	if (ret < 0) {
+		errno = -ret;
+		ret = -1;
+	}
+	return ret;
+}
+
+
+int unlink(char *path)
+{
+	int ret;
+	__asm__ __volatile__ (
+			"pushl %%ebx \n"
+			"movl $8, %%eax\n"
+			"movl %1, %%ebx\n"
+			"int $0x80\n"
+			"popl %%ebx \n"
+			"movl %%eax, %0"
+			: "=g" (ret)
+			: "g" (path)
+			);
+
+	if (ret < 0) {
+		errno = -ret;
+		ret = -1;
+	}
+	return ret;
+}
+
 
 int gettime(){
 int ret;

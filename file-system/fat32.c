@@ -23,8 +23,8 @@ DWord FAT[FAT_SIZE];
 // Only works for FAT32, since other FAT versions have different data organization
 void getFAT32attributes()
 {
-	Byte * bootRecPointer;	// Pointer to the start of the boot record
-	Byte * fsinfoPointer;	// Pointer to the start of the FSInfo structure
+	char * bootRecPointer;	// Pointer to the start of the boot record
+	char * fsinfoPointer;	// Pointer to the start of the FSInfo structure
 
 	ideread(bootRecPointer, 0);
 	ideread(fsinfoPointer, 1);
@@ -114,7 +114,7 @@ void extractFilename(char * path, Byte * filename, int searchPos)
 
 
 // Returns 1 if the 11 bytes of path1 and path2 are equal
-int compareFilename(Byte * path1, Byte * path2)
+int compareFilename(char * path1, char * path2)
 {
 	for (int i=0; i<11; i++)
 	{
@@ -125,7 +125,7 @@ int compareFilename(Byte * path1, Byte * path2)
 
 
 // Reads a directory entry into a struct given a sector and entry
-DirectoryEntry getDirectoryEntry(Byte * sector, int offset)
+DirectoryEntry getDirectoryEntry(char * sector, int offset)
 {
 	// In case the offset is not a multiple of 32, returns the first entry
 	if (offset % 32 != 0) offset = 0;
@@ -182,10 +182,10 @@ int searchFile(char * path)
 //  'cluster' is the first cluster of the directory to be scanned
 DWord recursiveSearch(char * path, DWord cluster, int searchPos)
 {
-	Byte sector[biosParameterBlock.bytesPerSector];
+	char sector[biosParameterBlock.bytesPerSector];
 
 	// filename is the current file/directory from the path being checked
-	Byte filename[11];
+	char filename[11];
 	extractFilename(path, filename, searchPos);
 	
 
@@ -200,7 +200,7 @@ DWord recursiveSearch(char * path, DWord cluster, int searchPos)
 		// Read a directory entry by entry (each one is 32 bytes long)
 		for (int i=0; i<biosParameterBlock.bytesPerSector; i+=32)
 		{
-			DirectoryEntry entry = getDirectoryEntry(*sector, i);
+			DirectoryEntry entry = getDirectoryEntry(sector, i);
 
 			// Read the first byte of the directory entry, which contains either
 			//  the file name or special codes, such as the following:
@@ -274,7 +274,7 @@ DWord allocateCluster(DWord startingCluster) // startingCluster = 0 is a special
 	}
 	
 	// Search for the first available cluster (0 and 1 are reserved)
-	for (i; i<FAT_SIZE; i++)
+	for (; i<FAT_SIZE; i++)
 	{
 		// Update the FAT with the new values when found
 		// 0x?0000000 means the cluster is not in use and available
@@ -294,7 +294,6 @@ DWord allocateCluster(DWord startingCluster) // startingCluster = 0 is a special
 // Change parameters to OFT_entry
 int writeFile(DWord startingCluster, char * buffer, int size, int startByte) // TO DO: Size update
 {
-	DWord startingCluster;
 	DWord cluster = startingCluster;
 
 	// Variable initialization
@@ -381,7 +380,6 @@ int writeFile(DWord startingCluster, char * buffer, int size, int startByte) // 
 
 int readFile(DWord startingCluster, char * buffer, int size, int startByte)
 {
-	DWord startingCluster;
 	DWord cluster = startingCluster;
 
 	// Variable initialization
@@ -580,7 +578,7 @@ int deleteFile(char * path, char * filename) // TO DO: check for dirs, only dele
 			// Read a directory entry by entry (each one is 32 bytes long)
 			for (int i=0; i<biosParameterBlock.bytesPerSector; i+=32)
 			{
-				DirectoryEntry entry = getDirectoryEntry(*sector, i);
+				DirectoryEntry entry = getDirectoryEntry(sector, i);
 
 				// End reached without finding the file
 				if (entry.filename[0] == 0x00) return -2; // 2 is ENOENT (No such file or directory)
