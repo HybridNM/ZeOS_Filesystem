@@ -11,7 +11,7 @@ ENTRY (sys_call_table)
 	.long sys_open
 	.long sys_close
 	.long sys_unlink
-	.long sys_ni_syscall
+	.long sys_lseek
 	.long sys_gettime// 10
 	.long sys_ni_syscall
 	.long sys_ni_syscall

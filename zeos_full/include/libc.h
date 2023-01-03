@@ -14,7 +14,11 @@ int read(int fd, char *buffer, int size);
 
 int open(char *path, int mode);
 
-int close(char *path);
+int close(int fd);
+
+int unlink(char *path);
+
+int lseek(int fd, int offset, int whence);
 
 void itoa(int a, char *b);
 

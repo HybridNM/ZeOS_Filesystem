@@ -12,6 +12,7 @@
 #include <interrupt.h>
 #include <sem.h>
 #include <types.h>
+#include <fat32.h>
 
 #define LECTURA 0
 #define ESCRIPTURA 1
@@ -27,7 +28,7 @@ void init_open_file_table()
 	{
 		open_file_table[i].startCluster = 0;
 		open_file_table[i].openCount = 0;
-		open_file_table[i].accesOffset = 0;
+		open_file_table[i].access_offset = 0;
 		open_file_table[i].permissions = -1;
 	}
 }
@@ -120,6 +121,8 @@ int sys_write(int fd, char *buffer, int nbytes)
 			return ret;
 		}
 	}
+	// Should never get here
+	return -EBADF;
 }
 
 int sys_read(int fd, char *buffer, int nbytes)
@@ -141,14 +144,12 @@ int sys_read(int fd, char *buffer, int nbytes)
 	// Call the file system function
 	DWord firstCluster = open_file_table[OFT_entry].startCluster;
 	int offset = open_file_table[OFT_entry].access_offset;
-	int ret = readFile(firstCluster, buffer, nbytes, offset);
+	ret = readFile(firstCluster, buffer, nbytes, offset);
 
 	if (ret != 0) return -1; // TO DO: Error // copy to user o no?
-	else
-	{
-		open_file_table[OFT_entry].access_offset += nbytes;
-		return ret;
-	}
+	// else
+	open_file_table[OFT_entry].access_offset += nbytes;
+	return ret;
 } 
 
 
@@ -182,7 +183,7 @@ int sys_open(char *path, int mode)
 			// Now look for an available entry in the OFT
 			for (i=0; i<CHANNEL_TABLE_SIZE; i++)
 			{
-				if (open_file_table[i].startingCluster == 0) 
+				if (open_file_table[i].startCluster == 0) 
 				{
 					OFT_entry = i;
 					break;
@@ -198,7 +199,7 @@ int sys_open(char *path, int mode)
 			// In that case we have to increase the number of references for those entries too
 			for (int j=0; j<OPEN_FILE_TABLE_SIZE; j++)
 			{
-				if (open_file_table[j].startingCluster == fileCluster)
+				if (open_file_table[j].startCluster == fileCluster)
 				{
 					// We could also just take the openCount of a different entry and add 1
 					open_file_table[j].openCount++;
@@ -251,6 +252,8 @@ int sys_close(int fd)
 	open_file_table[OFT_entry].openCount = 0;
 	open_file_table[OFT_entry].access_offset = 0;
 	open_file_table[OFT_entry].permissions = -1;
+
+	return 0;
 }
 
 
@@ -262,13 +265,43 @@ int sys_unlink(char * path) // A fancy name for the delete function
 	for (int i=0; i<OPEN_FILE_TABLE_SIZE; i++)
 	{
 		// If the file is open the function returns with an error
-		if (open_file_table[i].startingCluster == fileCluster)
+		if (open_file_table[i].startCluster == fileCluster)
 		{
 			return -EACCES; // Not the ideal code but we can make do with it
 		}
 	}
 
-	return deleteFile(path);
+	return deleteFile(path); // TO DO: cut path into 2 parts
+}
+
+
+int sys_lseek(int fd, int offset, int whence) // whence=0: SEEK_SET, whence=1: SEEK_CUR
+{
+	// Invalid whence value
+	if (whence != 0 && whence != 1) return -EINVAL;
+	
+	// Get a reference to the process' channel table
+	channel_table_entry *process_ch_t = get_CHT( current() );
+
+	// File not open by the process
+	if (process_ch_t[fd-2].fd != fd) return -EBADF;
+
+	// Get the Open File Table entry 
+	int OFT_entry = process_ch_t[fd-2].OFT_entry_num;
+	int ret_seek;
+
+	if (whence == 0) // SEEK_SET
+	{
+		ret_seek = offset;
+		open_file_table[OFT_entry].access_offset = offset;
+	}
+	else // SEEK_CUR
+	{
+		ret_seek = open_file_table[OFT_entry].access_offset + offset;
+		open_file_table[OFT_entry].access_offset = ret_seek;
+	}
+	// Return the final offset
+	return ret_seek;
 }
 
 
