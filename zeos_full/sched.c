@@ -123,6 +123,14 @@ void init_task1(void)
 	init->quantum = DEFAULT_QUANTUM;
 	quantum_left = init->quantum;
 	init_stats(&init->stats);
+
+	// Initialize channel table
+	for (int i=0; i<CHANNEL_TABLE_SIZE; i++)
+	{
+		init->channel_table[i].fd = 0;
+		init->channel_table[i].OFT_entry_num = -1;
+	}
+	
 }
 
 

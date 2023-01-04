@@ -2,6 +2,7 @@
 #define ERRNO_H__
 
   
+#define	EIO			 5	/* I/O error */
 #define	EBADF		 9	/* Bad file number */
 #define	ENOMEM		12	/* Out of memory */
 #define	EACCES		13	/* Permission denied */

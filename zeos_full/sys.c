@@ -114,7 +114,8 @@ int sys_write(int fd, char *buffer, int nbytes)
 		int offset = open_file_table[OFT_entry].access_offset;
 		int ret = writeFile(firstCluster, buffer, nbytes, offset);
 
-		if (ret != 0) return -1; // TO DO: Error
+		// If the write doesn't return 0 we can assume there was an I/O error
+		if (ret != 0) return -EIO;
 		else
 		{
 			open_file_table[OFT_entry].access_offset += nbytes;
@@ -146,7 +147,7 @@ int sys_read(int fd, char *buffer, int nbytes)
 	int offset = open_file_table[OFT_entry].access_offset;
 	ret = readFile(firstCluster, buffer, nbytes, offset);
 
-	if (ret != 0) return -1; // TO DO: Error // copy to user o no?
+	if (ret != 0) return -EIO; // TO DO: copy to user if free time
 	// else
 	open_file_table[OFT_entry].access_offset += nbytes;
 	return ret;
@@ -156,7 +157,6 @@ int sys_read(int fd, char *buffer, int nbytes)
 int sys_open(char *path, int mode)
 {
 	// TO DO: ver que hacer si hay una entrada al mismo fichero con otro modo
-	// TO DO: initialize channel table in process creation I guess?
 
 	DWord fileCluster;
 	int numReferences = 1; // Number of refs for the open file
@@ -171,7 +171,7 @@ int sys_open(char *path, int mode)
 	if (fileCluster == 0)
 	{
 		// TO DO: Parse and separate filename
-		int ret = createFile();
+		int ret = createFile(path, "file1     ", 0);
 	}
 
 	// Look for an entry in the channel table
@@ -271,7 +271,7 @@ int sys_unlink(char * path) // A fancy name for the delete function
 		}
 	}
 
-	return deleteFile(path); // TO DO: cut path into 2 parts
+	return deleteFile(path, "file1     "); // TO DO: cut path into 2 parts
 }
 
 

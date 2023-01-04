@@ -36,6 +36,7 @@ SYSOBJ = \
 	list.o \
 	sem.o \
 	ide.a \
+	fat32.a \
 
 LIBZEOS = -L . -l zeos
 
