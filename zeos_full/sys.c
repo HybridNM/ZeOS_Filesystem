@@ -17,12 +17,15 @@
 #define LECTURA 0
 #define ESCRIPTURA 1
 
+#define OPEN_FILE_TABLE_SIZE 100
+#define CHANNEL_TABLE_SIZE 10
+
 extern unsigned PID;
 
 open_file_table_entry open_file_table[OPEN_FILE_TABLE_SIZE];
 
 
-void init_open_file_table()
+extern void init_open_file_table()
 {
 	for (int i=0; i<OPEN_FILE_TABLE_SIZE; i++)
 	{
@@ -61,8 +64,52 @@ int sys_gettime()
 	return zeos_ticks;
 }
 
-
 #define TAM_BUFFER 512
+
+
+// Writes the whole path without the last filename to 'directory' 
+//  and the last file name to 'filename'
+void split_filename(char * path, char * directory, char * filename)
+{
+	int path_it = 1;
+	int dir_it = 1;
+	int file_it = 0;
+
+	// Just run until the end
+	while (path[path_it] != '\0')
+	{
+		if (path[path_it] == '/')
+		{
+			// Extend the directory name and filename to 11 characters first
+			for (; file_it<11; file_it++, dir_it++)
+			{
+				directory[dir_it] = ' ';
+				filename[file_it] = ' ';
+			}
+			
+			// Then write the '/' in the dir path and increase/reset iterators
+			directory[dir_it] = path[path_it];
+			path_it++;
+			dir_it++;
+			file_it = 0;
+		}
+		else {
+			// Simply copy the path to the new arrays
+			directory[dir_it] = path[path_it];
+			filename[file_it] = path[path_it];
+			path_it++;
+			dir_it++;
+			file_it++;
+		}
+	}
+	// Fill the remainder of the filename with spaces
+	for (; file_it<=11; file_it++) filename[file_it] = ' ';
+	
+	// Delete the filename up the the previous '/' (included) in the directory path
+	while (directory[dir_it] != '/') dir_it--;
+	directory[dir_it] = '\0';
+	directory[0] = '/';
+}
 
 
 int sys_write(int fd, char *buffer, int nbytes) 
@@ -116,11 +163,9 @@ int sys_write(int fd, char *buffer, int nbytes)
 
 		// If the write doesn't return 0 we can assume there was an I/O error
 		if (ret != 0) return -EIO;
-		else
-		{
-			open_file_table[OFT_entry].access_offset += nbytes;
-			return ret;
-		}
+		//else
+		open_file_table[OFT_entry].access_offset += nbytes;
+		return ret;
 	}
 	// Should never get here
 	return -EBADF;
@@ -128,15 +173,15 @@ int sys_write(int fd, char *buffer, int nbytes)
 
 int sys_read(int fd, char *buffer, int nbytes)
 {
-	int ret, bytes_left;
+	int ret;
 
 	// Parameter check
 	if ((ret = check_fd(fd, LECTURA)))
 		return ret;
 	if (nbytes < 0)
 		return -EINVAL;
-	// Skip verify step, since reading is not as dangerous as writing
-
+	if (!access_ok(VERIFY_WRITE, buffer, nbytes))
+		return -EFAULT;
 
 	// Get a reference to the process' channel table and the open file table entry
 	channel_table_entry *process_ch_t = get_CHT( current() );
@@ -156,11 +201,11 @@ int sys_read(int fd, char *buffer, int nbytes)
 
 int sys_open(char *path, int mode)
 {
-	// TO DO: ver que hacer si hay una entrada al mismo fichero con otro modo
+	// TO DO: Check for file attributes (READ_ONLY vs write)
 
 	DWord fileCluster;
-	int numReferences = 1; // Number of refs for the open file
 	int i;
+	int found = 0;
 	int OFT_entry;
 
 	channel_table_entry *process_ch_t = get_CHT( current() );
@@ -170,8 +215,17 @@ int sys_open(char *path, int mode)
 	fileCluster = searchFile(path);
 	if (fileCluster == 0)
 	{
-		// TO DO: Parse and separate filename
-		int ret = createFile(path, "file1     ", 0);
+		// Temporary char arrays
+		char filename[11];
+		char dir[96];
+		split_filename(path, dir, filename);
+
+		// Call the create function
+		int ret = createFile(dir, filename, 0x20);
+
+		// Check the result for errors, otherwise assign the newly allocated cluster to the file
+		if (ret == -1) return -EIO;
+		else fileCluster = ret;
 	}
 
 	// Look for an entry in the channel table
@@ -186,31 +240,22 @@ int sys_open(char *path, int mode)
 				if (open_file_table[i].startCluster == 0) 
 				{
 					OFT_entry = i;
+					found = 1;
 					break;
 				}
 			}
+			// Return if there are no available OFT entries
+			if (found != 1) return -EMFILE;
 
 			// Channel table assigns the fd number based on its possition in the table,
 			//  so that fd_number = ch_table_entry_num+2, to skip fd=0 and fd=1, which are reserved
 			process_ch_t[i].fd = i+2;
 			process_ch_t[i].OFT_entry_num = OFT_entry;
 
-			// Go through the open file table to look for other entries pointing to the same file
-			// In that case we have to increase the number of references for those entries too
-			for (int j=0; j<OPEN_FILE_TABLE_SIZE; j++)
-			{
-				if (open_file_table[j].startCluster == fileCluster)
-				{
-					// We could also just take the openCount of a different entry and add 1
-					open_file_table[j].openCount++;
-					numReferences++;
-				}
-			}
-
 			// Now that everything else is taken care of the OFT entry for this process can
 			//  be created, and filled with the corresponding information
 			open_file_table[OFT_entry].startCluster = fileCluster;
-			open_file_table[OFT_entry].openCount = numReferences;
+			open_file_table[OFT_entry].openCount = 1;
 			open_file_table[OFT_entry].access_offset = 0;
 			open_file_table[OFT_entry].permissions = mode;
 			
@@ -235,24 +280,20 @@ int sys_close(int fd)
 	// Get the Open File Table entry 
 	int OFT_entry = process_ch_t[fd-2].OFT_entry_num;
 
-	// Get the first cluster of the file to search for other possible entries to the same file
-	DWord fileCluster = open_file_table[OFT_entry].startCluster;
-
-	// Reduce the number of references of all entries to the same file if there are multiple
+	// If the open file count is greater than 1 the entry should not be cleared yet
 	if (open_file_table[OFT_entry].openCount > 1)
 	{
-		for (int i=0; i<OPEN_FILE_TABLE_SIZE; i++)
-		{
-			open_file_table[i].startCluster == fileCluster;
-			open_file_table[i].openCount--;
-		}
+		open_file_table[OFT_entry].openCount--;
 	}
-	// Clear the OFT entry for this process
+	// If it is 1 then we just flag the entry as available
 	open_file_table[OFT_entry].startCluster = 0;
 	open_file_table[OFT_entry].openCount = 0;
 	open_file_table[OFT_entry].access_offset = 0;
 	open_file_table[OFT_entry].permissions = -1;
 
+	// Close the file in the channel table
+	process_ch_t[fd].fd = 0;
+	
 	return 0;
 }
 
@@ -267,16 +308,23 @@ int sys_unlink(char * path) // A fancy name for the delete function
 		// If the file is open the function returns with an error
 		if (open_file_table[i].startCluster == fileCluster)
 		{
+			// TO DO: just delete anyway (mencionar en la docu)
 			return -EACCES; // Not the ideal code but we can make do with it
 		}
 	}
 
-	return deleteFile(path, "file1     "); // TO DO: cut path into 2 parts
+	// Create temporary arrays to operate with
+	char filename[11];
+	char dir[96];
+	split_filename(path, dir, filename);
+	// Call the delete function
+	return deleteFile(dir, filename);
 }
 
 
 int sys_lseek(int fd, int offset, int whence) // whence=0: SEEK_SET, whence=1: SEEK_CUR
 {
+	// TO DO: SEEK END si termino de implementar tamanyo de ficheros
 	// Invalid whence value
 	if (whence != 0 && whence != 1) return -EINVAL;
 	

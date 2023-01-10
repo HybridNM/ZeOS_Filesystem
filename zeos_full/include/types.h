@@ -154,8 +154,8 @@ typedef union
 
 typedef struct
 {
-	int fd;
-	int OFT_entry_num;
+	int fd; // TO DO: could delete and check OFT_entry_num
+	int OFT_entry_num; // TO DO: Cambiar a puntero
 } channel_table_entry;
 
 typedef struct

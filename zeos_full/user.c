@@ -16,5 +16,18 @@ int __attribute__ ((__section__(".text.main")))
    itoa(ticks, buffer);
    write(1,buffer,strlen(buffer));
 
+   /*// FS tests
+   int ret, fd;
+   char filepath[30] = "/DIR1/FILE1";
+   char buf2[5];
+   char filebuffer[30] = "FILE1 written here";
+   fd = open(filepath, 1);
+
+   itoa(fd, buf2);
+   write(1, buf2, 4);
+
+   ret = write(fd, filebuffer, strlen(filebuffer));
+   write(1, filebuffer, 4);*/
+
   while(1) { ;}
 }

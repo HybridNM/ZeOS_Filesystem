@@ -101,11 +101,14 @@ void getFAT32attributes();
 void initializeRootDir();
 void initializeFAT();
 
-void extractFilename(char * path, Byte * filename, int searchPos);
+int extractFilename(char * path, char * filename, int searchPos);
 int compareFilename(char * path1, char * path2);
 void deleteFATchain(DWord cluster);
-int setDirectoryEntry(Byte * sector, DirectoryEntry * entry, int offset);
-DirectoryEntry getDirectoryEntry(char * sector, int offset);
+int setDirectoryEntry(char * sector, DirectoryEntry * entry, int offset);
+int getDirectoryEntry(char * sector, DirectoryEntry * entry, int offset);
+unsigned getDiskSector(DWord cluster, int offset);
+void copyFATtoDisk(DWord cluster);
+void readFATfromDisk();
 
 DWord recursiveSearch(char * path, DWord cluster, int searchPos);
 DWord allocateCluster(DWord startingCluster);
@@ -116,5 +119,11 @@ int writeFile(DWord startingCluster, char * buffer, int size, int startByte);
 
 int createFile(char * path, char * filename, Byte attributes);
 int deleteFile(char * path, char * filename);
+
+void FStest();
+
+// TEMP
+void printk(char *string);
+void itoa2(int a, char *b);
 
 #endif

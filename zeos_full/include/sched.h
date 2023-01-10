@@ -14,7 +14,6 @@
 #define KERNEL_STACK_SIZE	1024
 
 #define CHANNEL_TABLE_SIZE 10
-#define OPEN_FILE_TABLE_SIZE 50
 
 enum state_t { ST_RUN, ST_READY, ST_BLOCKED };
 
@@ -67,7 +66,7 @@ page_table_entry * get_PT (struct task_struct *t);
 
 page_table_entry * get_DIR (struct task_struct *t);
 
-page_table_entry * get_CHT (struct task_struct *t);
+channel_table_entry * get_CHT (struct task_struct *t);
 
 /* Headers for the scheduling policy */
 void sched_next_rr();

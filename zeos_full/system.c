@@ -12,6 +12,8 @@
 #include <io.h>
 #include <utils.h>
 #include <ide.h>
+#include <fat32.h>
+
 
 int (*usr_main)(void) = (void *) PH_USER_START;
 unsigned int *p_sys_size = (unsigned int *) KERNEL_START;
@@ -82,7 +84,7 @@ int __attribute__((__section__(".text.main")))
   init_mm();
 
   ideinit();
-  ide_check_disk(); // S'ha de cridar ABANS enable_int!!! Ja que triga molt i pot entrar clock_handler quan encara no estem preparats.
+  //ide_check_disk(); // S'ha de cridar ABANS enable_int!!! Ja que triga molt i pot entrar clock_handler quan encara no estem preparats.
 
   /* Initialize Scheduling */
   init_sched();
@@ -92,8 +94,14 @@ int __attribute__((__section__(".text.main")))
   /* Initialize task 1 data */
   init_task1();
 
-  /* Initiali<e open file table */
+  /* Read the FAT32 configuration from disk */
+  initializeFAT();
+
+  /* Initialize open file table */
   init_open_file_table();
+
+  readFATfromDisk();
+  FStest();
 
   /* Move user code/data now (after the page table initialization) */
   copy_data((void *) KERNEL_START + *p_sys_size, usr_main, *p_usr_size);

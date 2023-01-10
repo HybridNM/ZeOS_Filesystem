@@ -42,7 +42,7 @@ page_table_entry * get_PT (struct task_struct *t)
 }
 
 /* get_CHT - Returns the Channel Table address for task 't' */
-page_table_entry * get_CHT (struct task_struct *t) 
+channel_table_entry * get_CHT (struct task_struct *t) 
 {
 	return t->channel_table;
 }
