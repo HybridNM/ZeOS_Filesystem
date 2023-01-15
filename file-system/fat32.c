@@ -117,15 +117,30 @@ void initializeFAT()
 {
 	getFAT32attributes();
 	initializeRootDir();
+	readFATfromDisk();
 }
 
+
+void printFAT()
+{
+	char buf[60];
+	for (int i=0; i<64; i++)
+	{
+		itoa2(i, buf);
+		printk("FAT entry number ");
+		printk(buf);
+		printk(": ");
+		itoa2(FAT[i], buf);
+		printk(buf);
+		printk("\n");
+	}
+}
 
 // cluster is the entry where changes have been made
 void copyFATtoDisk(DWord cluster)
 {
-	DWord startingFATsector = biosParameterBlock.reservedSectors + 0x100;
+	DWord startingFATsector = biosParameterBlock.reservedSectors;
 	DWord sector_offset = (cluster * 4) / 512;
-
 	DWord FATsectorStart = cluster - (cluster%128);
 
 	char FATsector[512];
@@ -146,61 +161,25 @@ void readFATfromDisk()
 	DWord FATvalue;
 	char FATsector[512];
 
-	// FAT is 16 sectors long
-
-	ideread(FATsector, startingFATsector + 0);
-	idewrite(FATsector, startingFATsector + 0x50);
-
-	char buf[60];
-	for (int i = 0; i < 512; i++)
-	{
-		//itoa2((unsigned)FATsector[i], buf);
-		//printk(buf);
-		//printk(", ");
-
-		if ((Byte)FATsector[i] == 0xFF)
-		{
-			printk("FF, ");
-		}
-		else if ((Byte)FATsector[i] == 0xF8)
-		{
-			printk("F8, ");
-		}
-		else if ((Byte)FATsector[i] == 0x0F)
-		{
-			printk("0F, ");
-		}
-		else if ((Byte)FATsector[i] == 0x00)
-		{
-			printk("00, ");
-		}
-		else
-		{
-			printk("??, ");
-		}
-		
-	}
-	printk("\n");
-
-
 	// Read all FAT sectors
 	for (int i=0; i<extendedBootRecord.sectorsPerFAT; i++)
 	{
 		ideread(FATsector, startingFATsector + i);
-		printk("sector read\n");
-		for (int j=0; j<128; j++)
+		//printk("sector read\n");
+		for (int j=0; j<128; j+=4)
 		{
-			DWord byte3 = ((DWord)(FATsector[j+0]))<<24;
-			DWord byte2 = ((DWord)(FATsector[j+1]))<<16;
-			DWord byte1 = ((DWord)(FATsector[j+2]))<<8;
-			DWord byte0 = ((DWord)(FATsector[j+3]));
+			DWord byte0 = ((Byte)(FATsector[j+0]));
+			DWord byte1 = ((Byte)(FATsector[j+1]))<<8;
+			DWord byte2 = ((Byte)(FATsector[j+2]))<<16;
+			DWord byte3 = ((Byte)(FATsector[j+3]))<<24;
 
 			FATvalue = byte3 | byte2 | byte1 | byte0;
-			FAT[i*128+j] = FATvalue;
-
+			FAT[(i*128)+(j/4)] = FATvalue;
 		}
 	}
+
 	printk("FAT Written\n");
+	//printFAT();
 }
 
 
@@ -216,12 +195,6 @@ int extractFilename(char * path, char * filename, int searchPos)
 	
 	// Initialize to whitespaces
 	for (i=0; i<11; i++) filename[i] = ' ';
-	
-	/*
-	printk("filebase before: '");
-	printk(filename);
-	printk("'\n");
-	*/
 
 	// path_it will be set to the first char that must be read after the loop
 	while (slashes < searchPos)
@@ -245,11 +218,6 @@ int extractFilename(char * path, char * filename, int searchPos)
 		path_it++;
 		i++;
 	}
-	/*
-	printk("filename  after: '");
-	printk(filename);
-	printk("'\n");
-	*/
 }
 
 
@@ -290,6 +258,7 @@ int getDirectoryEntry(char * sector, DirectoryEntry * entry, int offset)
 	return 0;
 }
 
+
 int setDirectoryEntry(char * sector, DirectoryEntry * entry, int offset)
 {
 	for (int i=0; i<11; i++)
@@ -298,19 +267,20 @@ int setDirectoryEntry(char * sector, DirectoryEntry * entry, int offset)
 	}
 	sector[0x0B + offset] = entry->attributes;
 	// First cluster high
-	sector[0x14 + offset] = (Byte)(entry->first_cluster_hi>>8);
-	sector[0x15 + offset] = (Byte)(entry->first_cluster_hi);
+	sector[0x14 + offset] = (Byte)(entry->first_cluster_hi);
+	sector[0x15 + offset] = (Byte)(entry->first_cluster_hi>>8);
 	// First cluster low
-	sector[0x1A + offset] = (Byte)(entry->first_cluster_lo>>8);
-	sector[0x1B + offset] = (Byte)(entry->first_cluster_lo);
+	sector[0x1A + offset] = (Byte)(entry->first_cluster_lo);
+	sector[0x1B + offset] = (Byte)(entry->first_cluster_lo>>8);
 	// File size
-	sector[0x1C + offset] = (Byte)(entry->size>>24);
-	sector[0x1D + offset] = (Byte)(entry->size>>16);
-	sector[0x1E + offset] = (Byte)(entry->size>>8);
-	sector[0x1F + offset] = (Byte)(entry->size);
+	sector[0x1C + offset] = (Byte)(entry->size);
+	sector[0x1D + offset] = (Byte)(entry->size>>8);
+	sector[0x1E + offset] = (Byte)(entry->size>>16);
+	sector[0x1F + offset] = (Byte)(entry->size>>24);
 	
 	return 0;
 }
+
 
 // Returns the disk sector given a FAT table cluster and optionally, an offset
 unsigned getDiskSector(DWord cluster, int offset)
@@ -352,11 +322,6 @@ DWord recursiveSearch(char * path, DWord cluster, int searchPos)
 	// extractFilename will return a -1 if the searchPos parameter is larger than
 	//  the number of files/directories in the path, this is used to search for directories
 	if (ret == -1) return cluster;
-	
-	itoa2(biosParameterBlock.sectorsPerCluster, buf);
-	printk("sectors per cluster: ");
-	printk(buf);
-	printk("\n");
 
 	// Each cluster has multiple consecutive sectors, so we can read them consecutively
 	for (int sectorNum=0; sectorNum<biosParameterBlock.sectorsPerCluster; sectorNum++)
@@ -657,7 +622,6 @@ int createFile(char * path, char * filename, Byte attributes) // filename must b
 	printk(clu);
 	printk("\n");
 
-	// TO DO: maybe update size to 4096 // (not needed) check if file exists, otherwise ret EEXIST (17)
 
 	// Go through the clusters in the directory
 	while (dirCluster < 0x0FFFFFF7)
@@ -681,7 +645,6 @@ int createFile(char * path, char * filename, Byte attributes) // filename must b
 					// Last entry in the sector, must use the next one for the end of dir. entry
 					if (i == (biosParameterBlock.bytesPerSector-32))
 					{
-						printk("bullshit\n");
 						// Allocate a new cluster to contain the new file
 						newCluster = allocateCluster(0);
 						if (newCluster == 0x0FFFFFFF) return -1; // No available clusters
@@ -689,12 +652,16 @@ int createFile(char * path, char * filename, Byte attributes) // filename must b
 						// Fill the contents of the directory entry
 						for (int byte=0; byte<11; byte++)
 						{
-							entry.filename[byte] = filename[byte];
+							// Additional check to make sure the name is 11 bytes long
+							//  and filled with spaces to the end (0x20 is a blank space)
+							if (filename[byte] < 0x20) entry.filename[byte] = 0x20;
+							else entry.filename[byte] = filename[byte];
 						}
 						entry.first_cluster_lo = (Word)(newCluster);
 						entry.first_cluster_hi = (Word)(newCluster>>16);
 						entry.size = 0;
 						entry.attributes = attributes; // attributes = 0x10 means the file is a directory
+						//entry.size = 4096;
 
 						// Write the contents of the entry to the corresponding place in the sector
 						setDirectoryEntry(sector, &entry, i);
@@ -717,7 +684,6 @@ int createFile(char * path, char * filename, Byte attributes) // filename must b
 
 						return newCluster;
 					}
-					printk("kinda makes sense\n");
 					// Allocate a new cluster to contain the new file
 					newCluster = allocateCluster(0);
 
@@ -733,12 +699,16 @@ int createFile(char * path, char * filename, Byte attributes) // filename must b
 					// Fill the contents of the directory entry
 					for (int byte=0; byte<11; byte++)
 					{
-						entry.filename[byte] = filename[byte];
+						// Additional check to make sure the name is 11 bytes long
+						//  and filled with spaces to the end (0x20 is a blank space)
+						if (filename[byte] < 0x20) entry.filename[byte] = 0x20;
+						else entry.filename[byte] = filename[byte];
 					}
 					entry.first_cluster_lo = (Word)(newCluster);
 					entry.first_cluster_hi = (Word)(newCluster>>16);
 					entry.size = 0;
 					entry.attributes = attributes; // attributes = 0x10 means the file is a directory
+					//entry.size = 4096;
 
 					// Write the contents of the entry to the corresponding place in the sector
 					setDirectoryEntry(sector, &entry, i);
@@ -805,7 +775,7 @@ int deleteFile(char * path, char * filename)
 
 					// Flag as deleted and clean the rest of the directory entry
 					sector[i] = 0xE5;
-					for (int file_it=1; file_it<32; file_it++) sector[i] = 0;
+					for (int file_it=i+1; file_it<i+32; file_it++) sector[file_it] = 0x00;
 					
 					// Write changes to the disk
 					idewrite(sector, disk_sector);
@@ -824,14 +794,47 @@ void FStest()
 	char dirpath[50] = "/DIR1";
 	char filenameA[11] = "FILEA";
 	char filenameB[11] = "FILEB";
-	char filenameC[11] = "FILEC";
-	char filenameD[11] = "FILED";
+	char filenameC[11] = "DIRA";
 
-	copyFATtoDisk(0);
+	//copyFATtoDisk(0);
 	//createFile(dirpath, filenameA, 0x20);
 	//createFile(dirpath, filenameB, 0x20);
-	//createFile(dirpath, filenameC, 0x20);
-	//createFile(dirpath, filenameD, 0x20);
+	//createFile(dirpath, filenameC, 0x10);
+	
+	//char dirpath2[50] = "/DIR1/DIRA";
+	//char filenameD[11] = "FILEC";
+	//createFile(dirpath2, filenameD, 0x20);
+
+	char text[60];
+	char buf[50];
+
+	for (int i=6; i<20; i++)
+	{
+		readFile(i, text, 10, 0);
+		printk("cluster ");
+		itoa2(i, buf);
+		printk(buf);
+		printk(" content: ");
+		printk(text);
+		printk("\n");
+	}
+
+	char text2[50] = "new text for file 1";
+	writeFile(6, text2, 20, 0);
+
+	char text3[50] = ", and now a second write";
+	writeFile(6, text3, 30, 19);
+	
+	readFile(6, text, 30, 19);
+	printk("New read starting at byte 19: ");
+	printk(text);
+	printk("\n");
+
+	char buf2[50] = "/DIR1       ";
+	char buf3[50] = "FILE0       ";
+	deleteFile(buf2, buf3);
+
+	copyFATtoDisk(0);
 }
 
 #if 0 // not used
