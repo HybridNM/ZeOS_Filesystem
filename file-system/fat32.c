@@ -20,6 +20,8 @@ DirectoryEntry rootDirectory;
 #define FAT_SIZE 2048
 DWord FAT[FAT_SIZE];
 
+// Set to 1 to print number of sectors per cluster, etc
+#define PRINT_FS_STATS 1
 
 // Get the different attributes from the corresponding disk sections
 // Only works for FAT32, since other FAT versions have different data organization
@@ -70,32 +72,33 @@ void getFAT32attributes()
 		printk("Unsupported number of bytes per sector and/or sectors per cluster.\n");
 	}
 
-	// TEMP
-	char buf[50];
-	itoa2(biosParameterBlock.bytesPerSector, buf);
-	printk("Bytes per sector: ");
-	printk(buf);
-	printk("\n");
+	#if PRINT_FS_STATS
+		char buf[50];
+		itoaSystem(biosParameterBlock.bytesPerSector, buf);
+		printk("Bytes per sector: ");
+		printk(buf);
+		printk("\n");
 
-	itoa2(biosParameterBlock.sectorsPerCluster, buf);
-	printk("Sectors per cluster: ");
-	printk(buf);
-	printk("\n");
+		itoaSystem(biosParameterBlock.sectorsPerCluster, buf);
+		printk("Sectors per cluster: ");
+		printk(buf);
+		printk("\n");
 
-	itoa2(biosParameterBlock.reservedSectors, buf);
-	printk("Reserved sectors: ");
-	printk(buf);
-	printk("\n");
+		itoaSystem(biosParameterBlock.reservedSectors, buf);
+		printk("Reserved sectors: ");
+		printk(buf);
+		printk("\n");
 
-	itoa2(extendedBootRecord.sectorsPerFAT, buf);
-	printk("Sectors per FAT: ");
-	printk(buf);
-	printk("\n");
+		itoaSystem(extendedBootRecord.sectorsPerFAT, buf);
+		printk("Sectors per FAT: ");
+		printk(buf);
+		printk("\n");
 
-	itoa2(extendedBootRecord.rootClusterNum, buf);
-	printk("Root dir cluster: ");
-	printk(buf);
-	printk("\n\n");
+		itoaSystem(extendedBootRecord.rootClusterNum, buf);
+		printk("Root dir cluster: ");
+		printk(buf);
+		printk("\n\n");
+	#endif
 }
 
 
@@ -118,21 +121,6 @@ void initializeFAT()
 	readFATfromDisk();
 }
 
-
-void printFAT()
-{
-	char buf[60];
-	for (int i=0; i<64; i++)
-	{
-		itoa2(i, buf);
-		printk("FAT entry number ");
-		printk(buf);
-		printk(": ");
-		itoa2(FAT[i], buf);
-		printk(buf);
-		printk("\n");
-	}
-}
 
 // cluster is the entry where changes have been made
 void copyFATtoDisk(DWord cluster)
@@ -163,7 +151,7 @@ void readFATfromDisk()
 	for (int i=0; i<extendedBootRecord.sectorsPerFAT; i++)
 	{
 		ideread(FATsector, startingFATsector + i);
-		//printk("sector read\n");
+
 		for (int j=0; j<128; j+=4)
 		{
 			DWord byte0 = ((Byte)(FATsector[j+0]));
@@ -284,7 +272,9 @@ unsigned getDiskSector(DWord cluster, int offset)
 int searchFile(char * path)
 {
 	// Call recursive function with the root cluster (searchPos must be at least 1)
-	return recursiveSearch(path, extendedBootRecord.rootClusterNum, 1);
+	DWord ret = recursiveSearch(path, extendedBootRecord.rootClusterNum, 1);
+	if (ret == 0xFFFFFFFF) return 0;
+	else return ret;
 }
 
 
@@ -564,44 +554,11 @@ int readFile(DWord startingCluster, char * buffer, int size, int startByte)
 }
 
 
-// TEMP
-void itoa2(int a, char *b)
-{
-  int i, i1;
-  char c;
-  
-  if (a==0) { b[0]='0'; b[1]=0; return ;}
-  
-  i=0;
-  while (a>0)
-  {
-    b[i]=(a%10)+'0';
-    a=a/10;
-    i++;
-  }
-  
-  for (i1=0; i1<i/2; i1++)
-  {
-    c=b[i1];
-    b[i1]=b[i-i1-1];
-    b[i-i1-1]=c;
-  }
-  b[i]=0;
-}
-
 int createFile(char * path, char * filename, Byte attributes) // filename must be 11 bytes long
 {
 	DWord dirCluster = searchFile(path); 
 	DWord newCluster = 0;
 	char sector[512];
-
-	// TEMP
-	char clu[20];
-	itoa2(dirCluster, clu);
-	printk("createFile func, dirCluster: ");
-	printk(clu);
-	printk("\n");
-
 
 	// Go through the clusters in the directory
 	while (dirCluster < 0x0FFFFFF7)
@@ -668,11 +625,6 @@ int createFile(char * path, char * filename, Byte attributes) // filename must b
 					// Not in an else since it will always return before reaching here
 					// Allocate a new cluster to contain the new file
 					newCluster = allocateCluster(0);
-
-					itoa2(newCluster, clu);
-					printk("New cluster: ");
-					printk(clu);
-					printk("\n");
 
 					if (newCluster == 0x0FFFFFFF) return -1; // No available clusters
 					FAT[newCluster] = 0x0FFFFFFF;
@@ -754,6 +706,7 @@ int deleteFile(char * path, char * filename)
 					// Remove the FAT chain 
 					DWord fileCluster = ((DWord)(entry.first_cluster_hi))<<16 | entry.first_cluster_lo;
 					deleteFATchain(fileCluster);
+					copyFATtoDisk(fileCluster);
 
 					// Flag as deleted and clean the rest of the directory entry
 					sector[i] = 0xE5;
@@ -875,74 +828,27 @@ void FStest(int testNum)
 	copyFATtoDisk(0);
 }
 
-#if 0 // not used
-// Gets the value of some important variables and then copies the FAT to memory
-void FATtoMemory()
+
+void itoaSystem(int a, char *b)
 {
-	// VARIABLE INIZIALISATION
-
-	// Check for actual number of sectors in the FAT
-	if (biosParameterBlock.numSectors == 0)
-		 clustersFAT = biosParameterBlock.numSectors * biosParameterBlock.sectorsPerCluster;
-	else clustersFAT = biosParameterBlock.numSectorsLSC * biosParameterBlock.sectorsPerCluster;
-
-	// 32 bit DWord will only support FAT_size of up to ~3900MB drives (less than 4GB)
-	DWord FAT_size = 4*clustersFAT; // size in bytes, 32 bits per entry
-	DWord numFrames = FAT_size/0x1000;
-
-
-	// MEMORY ALLOCATION
-
-	int frames[numFrames]; // needed memory frames to allocate the FAT
-	// 20 pages for 128MB drive
-
-	for (int i=0; i<numFrames; i++)
-	{
-		frames[i] = alloc_frame();
-		// add error check later
-
-		// !!!!!!!!!!!!!!!!!!!!!!!!!!!!
-		// paginas reservadas, ahora toca buscar la primera direccion 
-		// y asignarsela al puntero FAT
-		// !!!!!!!!!!!!!!!!!!!!!!!!!!!!
-	}
-	
-
-	// COPYING FAT FROM DISK
-
-	DWord currentFATsector;
-
-	// Read the FAT from disk to memory, sector by sector
-	for (int i=0; i<extendedBootRecord.sectorsPerFAT; i++)
-	{
-		// The FAT region starts right after the reserved sectors, which include 
-		//  the boot sector, the FSInfo and sometimes other sectors
-		currentFATsector = biosParameterBlock.reservedSectors + i;
-		ideread(FAT+i*512, currentFATsector);
-	}
+  int i, i1;
+  char c;
+  
+  if (a==0) { b[0]='0'; b[1]=0; return ;}
+  
+  i=0;
+  while (a>0)
+  {
+    b[i]=(a%10)+'0';
+    a=a/10;
+    i++;
+  }
+  
+  for (i1=0; i1<i/2; i1++)
+  {
+    c=b[i1];
+    b[i1]=b[i-i1-1];
+    b[i-i1-1]=c;
+  }
+  b[i]=0;
 }
-
-
-// Takes a path and cuts up to the first '/', example:
-//  /path/to/file -> path/to/file
-//   path/to/file -> to/file
-char * trimPath(char * path)
-{
-	int i = 0;
-	int newPathStart = 0;
-	int pathLength = strLen(path);
-
-	do { // Sets the position where the path will be copied after trimming the first dir
-		i++; 
-		newPathStart++;
-	}
-	while(path[i] != '/');
-
-	char newPath[pathLength-newPathStart];
-
-	// Copy the remainder of the path
-	for (i; i<pathLength; i++) newPath[i-newPathStart] = path[i];
-	return &newPath;
-}
-
-#endif

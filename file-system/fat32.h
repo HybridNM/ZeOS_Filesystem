@@ -122,8 +122,8 @@ int deleteFile(char * path, char * filename);
 
 void FStest(int testNum);
 
-// TEMP
+// Debug and similar
 void printk(char *string);
-void itoa2(int a, char *b);
+void itoaSystem(int a, char *b);
 
 #endif

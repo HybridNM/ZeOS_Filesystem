@@ -8,6 +8,9 @@
 
 #include <stats.h>
 
+#define SEEK_SET 0
+#define SEEK_CUR 1
+
 int write(int fd, char *buffer, int size);
 
 int read(int fd, char *buffer, int size);

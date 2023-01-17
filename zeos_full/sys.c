@@ -20,6 +20,9 @@
 #define OPEN_FILE_TABLE_SIZE 100
 #define CHANNEL_TABLE_SIZE 10
 
+#define SEEK_SET 0
+#define SEEK_CUR 1
+
 extern unsigned PID;
 
 open_file_table_entry open_file_table[OPEN_FILE_TABLE_SIZE];
@@ -43,7 +46,11 @@ int check_fd(int fd, int permissions)
 	int OFT_entry = process_ch_t[fd-2].OFT_entry_num;
 
 	// fd=1 is the screen, and can't be read
-	if (fd == 1 && permissions == LECTURA) return -EBADF;
+	if (fd == 1)
+	{
+		if (permissions == LECTURA) return -EBADF;
+		else return 0;
+	}
 	
 	// startCluster=0 means the entry is not in use, therefore, return bad file number error
 	if (fd != 1 && open_file_table[OFT_entry].startCluster == 0) return -EBADF;
@@ -170,6 +177,7 @@ int sys_write(int fd, char *buffer, int nbytes)
 	// Should never get here
 	return -EBADF;
 }
+
 
 int sys_read(int fd, char *buffer, int nbytes)
 {
@@ -302,21 +310,12 @@ int sys_unlink(char * path) // A fancy name for the delete function
 {
 	// First check if the file is open by a different process
 	DWord fileCluster = searchFile(path);
-	
-	for (int i=0; i<OPEN_FILE_TABLE_SIZE; i++)
-	{
-		// If the file is open the function returns with an error
-		if (open_file_table[i].startCluster == fileCluster)
-		{
-			// TO DO: just delete anyway (mencionar en la docu) (delete all entries in the OFT)
-			return -EACCES; // Not the ideal code but we can make do with it
-		}
-	}
 
 	// Create temporary arrays to operate with
 	char filename[11];
 	char dir[96];
 	split_filename(path, dir, filename);
+
 	// Call the delete function
 	return deleteFile(dir, filename);
 }
@@ -324,9 +323,9 @@ int sys_unlink(char * path) // A fancy name for the delete function
 
 int sys_lseek(int fd, int offset, int whence) // whence=0: SEEK_SET, whence=1: SEEK_CUR
 {
-	// TO DO: SEEK END si termino de implementar tamanyo de ficheros // defines!
+	// TO DO: SEEK END if file size is implemented
 	// Invalid whence value
-	if (whence != 0 && whence != 1) return -EINVAL;
+	if (whence != SEEK_SET && whence != SEEK_CUR) return -EINVAL;
 	
 	// Get a reference to the process' channel table
 	channel_table_entry *process_ch_t = get_CHT( current() );
