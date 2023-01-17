@@ -107,7 +107,7 @@ int __attribute__((__section__(".text.main")))
 
 
   //zeos_init_auxjp();
-  printk("Entering user mode...");
+  printk("Entering user mode...\n");
 
   enable_int();
   /*

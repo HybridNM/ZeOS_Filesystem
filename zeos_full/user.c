@@ -2,9 +2,9 @@
 
 #define READ_TEST 0
 #define WRITE_TEST 0
-#define CREATE_TEST 1
+#define CREATE_TEST 0
 #define LSEEK_TEST 0
-#define UNLINK_TEST 0
+#define UNLINK_TEST 1
 
 char buff[24];
 int pid;
@@ -70,7 +70,7 @@ int __attribute__ ((__section__(".text.main")))
 		char openFile[30] = "/DIR1/FILE5";
 
 		ret_open = open(openFile, 0);
-		if (ret_open>0) write(1, "File creation successful\n", 25);
+		if (ret_open>1) write(1, "File creation successful\n", 25);
 		else write(1, "File creation unsuccessful\n", 27);
 
 	#endif

@@ -243,7 +243,7 @@ int sys_open(char *path, int mode)
 		if (process_ch_t[i].fd != i+2)
 		{
 			// Now look for an available entry in the OFT
-			for (i=0; i<CHANNEL_TABLE_SIZE; i++)
+			for (i=0; i<OPEN_FILE_TABLE_SIZE; i++)
 			{
 				if (open_file_table[i].startCluster == 0) 
 				{
@@ -293,11 +293,13 @@ int sys_close(int fd)
 	{
 		open_file_table[OFT_entry].openCount--;
 	}
-	// If it is 1 then we just flag the entry as available
-	open_file_table[OFT_entry].startCluster = 0;
-	open_file_table[OFT_entry].openCount = 0;
-	open_file_table[OFT_entry].access_offset = 0;
-	open_file_table[OFT_entry].permissions = -1;
+	else {
+		// If it is 1 then we just flag the entry as available
+		open_file_table[OFT_entry].startCluster = 0;
+		open_file_table[OFT_entry].openCount = 0;
+		open_file_table[OFT_entry].access_offset = 0;
+		open_file_table[OFT_entry].permissions = -1;
+	}
 
 	// Close the file in the channel table
 	process_ch_t[fd].fd = 0;
