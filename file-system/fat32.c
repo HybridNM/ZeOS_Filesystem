@@ -95,9 +95,7 @@ void getFAT32attributes()
 	itoa2(extendedBootRecord.rootClusterNum, buf);
 	printk("Root dir cluster: ");
 	printk(buf);
-	printk("\n");
-
-	
+	printk("\n\n");
 }
 
 
@@ -178,8 +176,7 @@ void readFATfromDisk()
 		}
 	}
 
-	printk("FAT Written\n");
-	//printFAT();
+	printk("FAT Written to memory\n\n");
 }
 
 
@@ -218,18 +215,13 @@ int extractFilename(char * path, char * filename, int searchPos)
 		path_it++;
 		i++;
 	}
+	return 0;
 }
 
 
 // Returns 1 if the 11 bytes of path1 and path2 are equal
 int compareFilename(char * path1, char * path2)
 {
-	printk("'");
-	printk(path1);
-	printk("' vs '");
-	printk(path2);
-	printk("'\n");
-
 	for (int i=0; i<11; i++)
 	{
 		if (path1[i] != path2[i]) return 0;
@@ -240,7 +232,7 @@ int compareFilename(char * path1, char * path2)
 
 
 // Reads a directory entry into a struct given a sector and entry
-int getDirectoryEntry(char * sector, DirectoryEntry * entry, int offset)
+int getDirectoryEntry(char * sector, DirectoryEntry * entry, int offset) // TO DO: probably only reads a single byte
 {
 	// In case the offset is not a multiple of 32, returns the first entry
 	if (offset % 32 != 0) offset = 0;
@@ -301,18 +293,6 @@ int searchFile(char * path)
 //  'cluster' is the first cluster of the directory to be scanned
 DWord recursiveSearch(char * path, DWord cluster, int searchPos)
 {
-	char buf[60];
-	itoa2(cluster, buf);
-	printk("cluster: ");
-	printk(buf);
-	printk("\n");
-
-	itoa2(searchPos, buf);
-	printk("searchPos: ");
-	printk(buf);
-	printk("\n");
-
-
 	char sector[biosParameterBlock.bytesPerSector];
 
 	// filename is the current file/directory from the path being checked
@@ -355,7 +335,6 @@ DWord recursiveSearch(char * path, DWord cluster, int searchPos)
 					if (entry.attributes == 0x0F) break; // entry is a vfat entry
 					if (entry.attributes == 0x10)  // entry is a subdirectory
 					{
-						printk("subdir\n");
 						// Check if the subdirectory is part of the path, if it is, search
 						//  recursively in the cluster taken from its entry, otherwise skip
 						if (compareFilename(filename, (char *)entry.filename))
@@ -378,7 +357,7 @@ DWord recursiveSearch(char * path, DWord cluster, int searchPos)
 	}
 	// FAT chain is over, there are no more entries in the directory (also checks range)
 	//  0x0FFFFFF8-0x0FFFFFFF, 0x0FFFFFF7 would be a bad sector
-	if (cluster > FAT_SIZE || FAT[cluster] > 0x0FFFFFF7) return -1; 
+	if (cluster > FAT_SIZE || FAT[cluster] > 0x0FFFFFF7) return 0xFFFFFFFF; 
 	else {
 		// Otherwise follow cluster chain
 		return recursiveSearch(path, FAT[cluster], searchPos);
@@ -567,6 +546,7 @@ int readFile(DWord startingCluster, char * buffer, int size, int startByte)
 				cluster = FAT[cluster];
 				if (cluster > 0x0FFFFFF7) break; // Chain is over
 
+				clusterSectorNum = 0;
 				disk_sector = getDiskSector(cluster, 0);
 				ideread(localBuffer, disk_sector);
 			}
@@ -648,6 +628,8 @@ int createFile(char * path, char * filename, Byte attributes) // filename must b
 						// Allocate a new cluster to contain the new file
 						newCluster = allocateCluster(0);
 						if (newCluster == 0x0FFFFFFF) return -1; // No available clusters
+						FAT[newCluster] = 0x0FFFFFFF;
+						copyFATtoDisk(newCluster);
 
 						// Fill the contents of the directory entry
 						for (int byte=0; byte<11; byte++)
@@ -661,7 +643,6 @@ int createFile(char * path, char * filename, Byte attributes) // filename must b
 						entry.first_cluster_hi = (Word)(newCluster>>16);
 						entry.size = 0;
 						entry.attributes = attributes; // attributes = 0x10 means the file is a directory
-						//entry.size = 4096;
 
 						// Write the contents of the entry to the corresponding place in the sector
 						setDirectoryEntry(sector, &entry, i);
@@ -684,6 +665,7 @@ int createFile(char * path, char * filename, Byte attributes) // filename must b
 
 						return newCluster;
 					}
+					// Not in an else since it will always return before reaching here
 					// Allocate a new cluster to contain the new file
 					newCluster = allocateCluster(0);
 
@@ -692,8 +674,8 @@ int createFile(char * path, char * filename, Byte attributes) // filename must b
 					printk(clu);
 					printk("\n");
 
-					FAT[newCluster] = 0x0FFFFFFF;
 					if (newCluster == 0x0FFFFFFF) return -1; // No available clusters
+					FAT[newCluster] = 0x0FFFFFFF;
 					copyFATtoDisk(newCluster);
 
 					// Fill the contents of the directory entry
@@ -708,10 +690,10 @@ int createFile(char * path, char * filename, Byte attributes) // filename must b
 					entry.first_cluster_hi = (Word)(newCluster>>16);
 					entry.size = 0;
 					entry.attributes = attributes; // attributes = 0x10 means the file is a directory
-					//entry.size = 4096;
 
 					// Write the contents of the entry to the corresponding place in the sector
 					setDirectoryEntry(sector, &entry, i);
+					sector[i+32] = 0x00;
 
 					// Set next entry as end of directory and write the changes
 					idewrite(sector, disk_sector);
@@ -789,50 +771,106 @@ int deleteFile(char * path, char * filename)
 }
 
 
-void FStest()
+void FStest(int testNum)
 {
-	char dirpath[50] = "/DIR1";
-	char filenameA[11] = "FILEA";
-	char filenameB[11] = "FILEB";
-	char filenameC[11] = "DIRA";
+	// Starting sirectory hierarchy and content:
+	//
+	// / ____ DIR1 ____ FILE0 (file 0 here)
+	//     |         \_ FILE1 (file 1 here)
+	//     |
+	//     \_ DIR2 ____ FILE2 (file 2 here)
 
-	//copyFATtoDisk(0);
-	//createFile(dirpath, filenameA, 0x20);
-	//createFile(dirpath, filenameB, 0x20);
-	//createFile(dirpath, filenameC, 0x10);
-	
-	//char dirpath2[50] = "/DIR1/DIRA";
-	//char filenameD[11] = "FILEC";
-	//createFile(dirpath2, filenameD, 0x20);
+	#define READ_TEST 1
+	#define WRITE_TEST 2
+	#define CREATE_TEST 3
+	#define DELETE_TEST 4
 
-	char text[60];
-	char buf[50];
+	// Variables for the read and write test
+	char file0r[30] = "/DIR1/FILE0";
+	char file1r[30] = "/DIR1/FILE1";
+	char file2r[30] = "/DIR2/FILE2";
+	char fileContent[50];
+	DWord cluster0;
+	DWord cluster1;
+	DWord cluster2;
 
-	for (int i=6; i<20; i++)
+	// Variables for the write test
+	char writeContent0[50] = "Overwritten FILE0";
+	char writeContent1[50] = "Overwritten FILE1";
+	char writeContent2[50] = "Overwritten FILE2";
+
+	// Variables for the create and delete test
+	char dir1c[30] = "/DIR1";
+	char dir2c[30] = "/DIR2";
+	char file3c[11] = "FILE3      ";
+	char file4c[11] = "FILE4      ";
+	char file5c[11] = "DIR3       ";
+	char dir3c[30] = "/DIR1/DIR3";
+	char file6c[11] = "FILE6      ";
+
+	// Variables for the delete test:
+	char file1d[11] = "FILE1      ";
+	char file2d[11] = "FILE2      ";
+
+	switch (testNum)
 	{
-		readFile(i, text, 10, 0);
-		printk("cluster ");
-		itoa2(i, buf);
-		printk(buf);
-		printk(" content: ");
-		printk(text);
+	case READ_TEST:
+
+		cluster0 = searchFile(file0r);
+		cluster1 = searchFile(file1r);
+		cluster2 = searchFile(file2r);
+
+		readFile(cluster0, fileContent, 50, 0);
+		printk("file0 content: ");
+		printk(fileContent);
 		printk("\n");
-	}
 
-	char text2[50] = "new text for file 1";
-	writeFile(6, text2, 20, 0);
+		readFile(cluster1, fileContent, 50, 0);
+		printk("file1 content: ");
+		printk(fileContent);
+		printk("\n");
 
-	char text3[50] = ", and now a second write";
-	writeFile(6, text3, 30, 19);
+		readFile(cluster0, fileContent, 50, 5);
+		printk("file2 content, starting position=5: ");
+		printk(fileContent);
+		printk("\n");
+
+		break;
+
+	case WRITE_TEST:
+		
+		cluster0 = searchFile(file0r);
+		cluster1 = searchFile(file1r);
+		cluster2 = searchFile(file2r);
+
+		writeFile(cluster0, writeContent0, 50, 0);
+		writeFile(cluster1, writeContent1, 50, 0);
+		writeFile(cluster2, writeContent2, 50, 5);
+		printk("Files written\n");
+
+		break;
+
+	case CREATE_TEST:
+		
+		createFile(dir1c, file3c, 0x20);
+		createFile(dir1c, file4c, 0x20);
+		createFile(dir1c, file5c, 0x10);
+		createFile(dir3c, file6c, 0x20);
+		printk("Files created\n");
+
+		break;
+
+	case DELETE_TEST:
+		
+		deleteFile(dir1c, file1d);
+		deleteFile(dir2c, file2d);
+		printk("Files deleted\n");
+
+		break;
 	
-	readFile(6, text, 30, 19);
-	printk("New read starting at byte 19: ");
-	printk(text);
-	printk("\n");
-
-	char buf2[50] = "/DIR1       ";
-	char buf3[50] = "FILE0       ";
-	deleteFile(buf2, buf3);
+	default:
+		break;
+	}
 
 	copyFATtoDisk(0);
 }

@@ -120,7 +120,7 @@ int writeFile(DWord startingCluster, char * buffer, int size, int startByte);
 int createFile(char * path, char * filename, Byte attributes);
 int deleteFile(char * path, char * filename);
 
-void FStest();
+void FStest(int testNum);
 
 // TEMP
 void printk(char *string);

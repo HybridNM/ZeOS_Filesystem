@@ -308,7 +308,7 @@ int sys_unlink(char * path) // A fancy name for the delete function
 		// If the file is open the function returns with an error
 		if (open_file_table[i].startCluster == fileCluster)
 		{
-			// TO DO: just delete anyway (mencionar en la docu)
+			// TO DO: just delete anyway (mencionar en la docu) (delete all entries in the OFT)
 			return -EACCES; // Not the ideal code but we can make do with it
 		}
 	}
@@ -324,7 +324,7 @@ int sys_unlink(char * path) // A fancy name for the delete function
 
 int sys_lseek(int fd, int offset, int whence) // whence=0: SEEK_SET, whence=1: SEEK_CUR
 {
-	// TO DO: SEEK END si termino de implementar tamanyo de ficheros
+	// TO DO: SEEK END si termino de implementar tamanyo de ficheros // defines!
 	// Invalid whence value
 	if (whence != 0 && whence != 1) return -EINVAL;
 	
